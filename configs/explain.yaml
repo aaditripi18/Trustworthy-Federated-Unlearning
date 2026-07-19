@@ -1,0 +1,9 @@
+# Explanation configuration (M5). Loaded with data/model/federated/unlearn yaml.
+
+seed: 42
+
+explain:
+  method: attention_rollout    # registry key (src/explain/extract.py)
+  num_probe_images: 16         # fixed probe set size for the demonstration
+  iou_threshold: 0.5           # threshold for salient-region IoU
+  out_dir: experiments/explanations

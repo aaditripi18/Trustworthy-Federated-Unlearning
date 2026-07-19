@@ -1,0 +1,10 @@
+[project]
+name = "trustworthy-federated-unlearning"
+version = "0.0.1"
+description = "Attention-Fidelity-Preserving Federated Unlearning for Trustworthy Chest X-Ray Diagnosis (ViT)"
+requires-python = ">=3.9"
+
+# Makes `import src...` resolve when running pytest/scripts from the repo root.
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

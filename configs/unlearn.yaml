@@ -1,0 +1,12 @@
+# Federated unlearning configuration (M4). Loaded with data/model/federated yaml.
+
+seed: 42
+
+unlearn:
+  forget_client: 0          # client id to forget (0 .. num_clients-1)
+  method: finetune_retain   # registry key: finetune_retain | epu  (see src/unlearning/)
+  finetune_rounds: 2        # warm-started rounds (both finetune_retain and epu)
+  explanation_lambda: 1.0   # M6: weight of the explanation-consistency loss (epu only)
+  device: auto
+  ckpt_dir: experiments
+  threshold: 0.5

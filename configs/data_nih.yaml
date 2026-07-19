@@ -1,0 +1,29 @@
+# NIH ChestX-ray14 data configuration (M8, real dataset).
+# Used by the M8 driver; the synthetic configs/data.yaml stays the default so
+# all M0-M7 tests keep running. See docs/DATASET_NIH.md for download + layout.
+
+seed: 42
+
+data:
+  source: nih
+  root: data
+  num_labels: 14              # the 14 official NIH findings
+  image_size: 224             # ViT input resolution
+  val_fraction: 0.15          # patient-level splits (no leakage)
+  test_fraction: 0.15
+  num_clients: 5              # hospitals
+  batch_size: 32
+
+  # --- Performance-only knobs (do NOT affect results) ---
+  cache_images: true          # decode each PNG once, reuse the uint8 across rounds
+  eval_num_workers: 4         # parallel workers for EVAL/inference loaders only
+  pin_memory: true            # faster host->device copies (no numeric effect)
+
+  nih:
+    csv: data/nih/Data_Entry_2017_v2020.csv
+    images_dir: data/nih/images        # flat dir containing all *.png
+    subset_size: null                  # cap #patients for a smoke run (null = full)
+
+  partition:
+    scheme: dirichlet          # iid | dirichlet
+    alpha: 0.5                 # Dirichlet concentration (smaller => more non-IID)

@@ -1,0 +1,14 @@
+# Core stack for the full project.
+# M0 only exercises: numpy, pyyaml, pytest (+ torch if available).
+# torch/torchvision/timm/flwr become required from M2/M3 onward.
+torch>=2.0
+torchvision>=0.15
+timm>=0.9
+flwr>=1.7
+numpy>=1.24
+pandas>=2.0
+scikit-learn>=1.3
+pyyaml>=6.0
+pillow>=9.0          # NIH image loading (M8)
+matplotlib>=3.6      # publication figures (M8)
+pytest>=7.0

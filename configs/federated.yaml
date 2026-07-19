@@ -1,0 +1,14 @@
+# Federated training configuration (M3). Loaded with data.yaml + model.yaml.
+# num_clients / image_size / num_labels come from data.yaml.
+
+seed: 42
+
+federated:
+  num_rounds: 3
+  local_epochs: 1
+  lr: 0.001
+  weight_decay: 0.0001
+  device: auto
+  ckpt_dir: experiments
+  store_history: true      # persist per-round client updates (needed by M4 unlearning)
+  threshold: 0.5

@@ -1,0 +1,14 @@
+# Default configuration (M0 scaffold).
+# Only the keys needed by M0 are present; later milestones extend this file
+# (data, model, federated, unlearn, explain, eval sections) rather than
+# rewriting it.
+
+project: trustworthy-federated-unlearning
+seed: 42            # global RNG seed for reproducibility
+log_level: INFO
+
+# Minimal parameters exercised by the M0 smoke test's trivial forward pass.
+smoke:
+  batch_size: 4
+  in_features: 8
+  out_features: 3

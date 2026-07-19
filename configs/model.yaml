@@ -1,0 +1,21 @@
+# Model + centralized-training configuration (M2).
+# Loaded alongside data.yaml (image_size, num_labels, in_chans come from there).
+
+seed: 42
+
+model:
+  name: small_vit               # small_vit (fast, tiny inputs) | deit_small_patch16_224 (real scale, M8)
+  pretrained: false
+  in_chans: 1                   # grayscale CXR
+  patch_size: 4                 # small_vit: must divide image_size (32)
+  embed_dim: 64
+  depth: 4
+  num_heads: 4
+
+train:
+  epochs: 3
+  lr: 0.001
+  weight_decay: 0.0001
+  device: auto                  # auto | cpu | cuda
+  ckpt_dir: experiments
+  threshold: 0.5                # sigmoid threshold for F1 reporting

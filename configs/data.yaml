@@ -1,0 +1,25 @@
+# Data configuration (M1).
+# 'synthetic' keeps the pipeline fast and dependency-free for bring-up.
+# Switch source to 'nih' once NIH ChestX-ray14 is available (loader stubbed).
+
+seed: 42
+
+data:
+  source: synthetic          # synthetic | nih
+  root: data                 # where manifests/partitions are written
+  # --- synthetic subset (kept deliberately small & fast) ---
+  num_patients: 60
+  imgs_per_patient: [2, 5]    # inclusive range, drawn per patient
+  num_labels: 5               # multi-label pathologies
+  image_size: 32              # tiny images for speed at M1
+  # --- splits (patient-level, no patient leakage across splits) ---
+  val_fraction: 0.15
+  test_fraction: 0.15
+  # --- federated non-IID partition of the TRAIN split ---
+  num_clients: 5
+  label_skew_alpha: 0.5       # Dirichlet concentration; smaller => more skew
+  batch_size: 8
+  # --- Performance-only knobs; kept off for synthetic so tests stay identical ---
+  cache_images: false
+  eval_num_workers: 0
+  pin_memory: false
