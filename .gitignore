@@ -9,3 +9,5 @@ experiments/*
 !experiments/.gitkeep
 # NIH dataset
 data/nih/
+
+data/*.zip

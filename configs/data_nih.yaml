@@ -15,8 +15,15 @@ data:
   batch_size: 32
 
   # --- Performance-only knobs (do NOT affect results) ---
+  # NOTE: eval_num_workers set to 0 to avoid OOM on 16 GB g4dn.xlarge. With >0,
+  # each forked DataLoader worker copy-on-write-duplicated the multi-GB image
+  # cache (Python refcounting defeats fork sharing), pushing a single worker to
+  # ~14 GB RSS and triggering the OOM killer. With 0 workers the cache lives once
+  # in the main process (~5.6 GB) and fits comfortably. Eval loaders are
+  # shuffle=False with a deterministic transform, so worker count cannot change
+  # batch contents, order, predictions, metrics, or explanations.
   cache_images: true          # decode each PNG once, reuse the uint8 across rounds
-  eval_num_workers: 4         # parallel workers for EVAL/inference loaders only
+  eval_num_workers: 0         # was 4; 0 = load in main process (no worker OOM)
   pin_memory: true            # faster host->device copies (no numeric effect)
 
   nih:

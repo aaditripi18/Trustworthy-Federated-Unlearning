@@ -12,6 +12,8 @@ Run from the repo root (after downloading NIH, see docs/DATASET_NIH.md):
 """
 from __future__ import annotations
 
+import json
+import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,6 +58,14 @@ def main() -> int:
     seeds = cfg["evaluation"]["seeds"]
     lambdas = cfg["evaluation"]["lambdas"]
 
+    # Persist logs to disk so a killed process (e.g. OOM) still leaves a record;
+    # the stream handler alone only lived in the terminal/tmux pane.
+    exp.mkdir(parents=True, exist_ok=True)
+    _fh = logging.FileHandler(exp / "run.log")
+    _fh.setFormatter(logging.Formatter(
+        "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"))
+    log.addHandler(_fh)
+
     # sanity: fail early with a clear message if NIH files are missing
     nih = cfg["data"]["nih"]
     if not (REPO_ROOT / nih["csv"]).exists() or not (REPO_ROOT / nih["images_dir"]).exists():
@@ -67,10 +77,29 @@ def main() -> int:
              len(seeds), lambdas, cfg["data"]["num_clients"],
              cfg["data"]["partition"]["scheme"], cfg["data"]["partition"].get("alpha"))
 
+    # Per-seed checkpointing: each seed is fully seeded and independent, so its
+    # results are written atomically the moment it finishes. A later crash resumes
+    # by loading completed seeds and only re-running the unfinished ones. The final
+    # aggregated outputs are byte-identical to a single uninterrupted run.
+    part_dir = exp / "partial"
+    part_dir.mkdir(parents=True, exist_ok=True)
+
     results = []
     for seed in seeds:
+        pfile = part_dir / f"seed_{seed}.json"
+        if pfile.exists():
+            log.info("=== seed %d === (resume: loading completed partial)", seed)
+            results.extend(json.loads(pfile.read_text()))
+            continue
         log.info("=== seed %d ===", seed)
-        results.extend(run_single(cfg, seed, lambdas, logger=log))
+        seed_results = run_single(cfg, seed, lambdas, logger=log)
+        tmp = pfile.with_suffix(".json.tmp")        # atomic: write tmp then replace
+        # default handles numpy scalars (np.float64/int64) that json can't natively.
+        tmp.write_text(json.dumps(seed_results,
+                                  default=lambda o: o.item() if hasattr(o, "item") else str(o)))
+        tmp.replace(pfile)
+        log.info("seed %d complete; checkpoint written to %s", seed, pfile)
+        results.extend(seed_results)
 
     meta = {
         "experiment": "M8 final (NIH ChestX-ray14)",
