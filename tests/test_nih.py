@@ -71,7 +71,11 @@ def test_partition_scheme_iid_vs_dirichlet(tmp_path):
 
 
 def test_build_datamodule_with_nih_source(tmp_path):
-    csv, images_dir = _fake_nih(tmp_path)
+    # Enough patients that the Dirichlet partition gives every client >=1 patient;
+    # with too few (e.g. the 12-patient default) a client can get 0 images, which a
+    # torch DataLoader's RandomSampler rejects (num_samples=0). Real NIH has
+    # ~30k patients, so this is a small-fixture artifact, not a pipeline issue.
+    csv, images_dir = _fake_nih(tmp_path, n_patients=24)
     cfg = {"seed": 42, "data": {
         "source": "nih", "num_labels": 14, "image_size": 16,
         "val_fraction": 0.15, "test_fraction": 0.15, "num_clients": 2, "batch_size": 4,

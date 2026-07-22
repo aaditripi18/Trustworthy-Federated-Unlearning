@@ -60,6 +60,7 @@ def test_unlearn_end_to_end_report_structure():
     from src.data.dataset import build_datamodule
     from src.federated.client import get_params
     from src.federated.server import run_federated
+    from src.models.vit import resolve_device
     from src.unlearning.methods import get_method
     from src.unlearning.oracle import retrain_oracle
     from src.unlearning.verify import forgetting_report
@@ -77,10 +78,14 @@ def test_unlearn_end_to_end_report_structure():
     dm = build_datamodule(cfg)
     oracle = retrain_oracle(cfg, 0)
     unlearned = get_method("finetune_retain")(cfg, 0, get_params(base["model"]))
+    # The models are built inside run_federated on resolve_device(federated.device);
+    # evaluate them on that SAME device (was hardcoded "cpu", which mismatches a
+    # cuda-resident model on a GPU machine).
+    device = resolve_device(cfg["federated"].get("device", "auto"))
     rep = forgetting_report(
         cfg, dm,
         {"original": base["model"], "unlearned": unlearned["model"], "oracle": oracle["model"]},
-        0, "cpu")
+        0, device)
 
     for k in ("forget_set_loss", "mia_auc", "pred_distance_to_oracle",
               "closeness_improvement_vs_oracle"):
