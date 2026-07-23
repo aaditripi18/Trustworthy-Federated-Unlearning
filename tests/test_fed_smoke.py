@@ -49,6 +49,9 @@ def test_federated_runs_and_updates_global():
     cfg["data"]["num_clients"] = 2
     cfg["federated"]["num_rounds"] = 2
     cfg["federated"]["local_epochs"] = 1
+    # This test verifies the history feature itself, so enable it explicitly
+    # (the production config disables it to save memory on the final run).
+    cfg["federated"]["store_history"] = True
 
     out = run_federated(cfg)
     assert len(out["history"]) == 2                     # per-round history persisted

@@ -10,5 +10,10 @@ federated:
   weight_decay: 0.0001
   device: auto
   ckpt_dir: experiments
-  store_history: true      # persist per-round client updates (needed by M4 unlearning)
+  # store_history=false to prevent host-RAM OOM on 16 GB g4dn.xlarge: when true,
+  # every round keeps a full copy of the global + all client params (~88 MB each
+  # for DeiT-Small), ~7 GB across all stages of a seed. The M8 final pipeline never
+  # reads history (only a hypothetical FedEraser update-replay method would), so
+  # disabling it changes no scientific output — only memory.
+  store_history: false     # was true; history unused by oracle/finetune_retain/EPU
   threshold: 0.5
