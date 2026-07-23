@@ -13,7 +13,8 @@ from .strategy import weighted_average
 
 
 def run_federated(cfg: dict, logger=None, include_clients=None,
-                  init_params=None, num_rounds=None, local_fn=None, dm=None) -> dict:
+                  init_params=None, num_rounds=None, local_fn=None, dm=None,
+                  pos_weight=None, lr_schedule=None, on_round_end=None) -> dict:
     """FedAvg simulation.
 
     include_clients : optional iterable of client ids to include (others dropped);
@@ -31,6 +32,16 @@ def run_federated(cfg: dict, logger=None, include_clients=None,
                       function of (cfg, seed) using only a locally-seeded RNG, so a
                       reused dm is identical to a freshly built one; passing it in
                       just avoids re-decoding/partitioning on every call.
+    pos_weight      : optional (L,) array/tensor forwarded to local BCE loss (the
+                      class-imbalance fix). None -> standard BCE (unchanged).
+    lr_schedule     : optional callable(round_idx)->lr (warmup+cosine). None ->
+                      constant fcfg["lr"] (unchanged). The FedAvg algorithm is not
+                      altered; only the per-round local LR is set from this.
+    on_round_end    : optional callable(round_idx, model, train_loss, lr)->bool.
+                      When provided, the server's built-in per-round val logging is
+                      replaced by this callback (which owns evaluation/checkpointing/
+                      early-stopping); returning True stops training early. When
+                      None, the original behavior is unchanged.
     """
     import torch  # noqa: F401  (ensures torch present; fail fast otherwise)
 
@@ -60,6 +71,8 @@ def run_federated(cfg: dict, logger=None, include_clients=None,
     rounds = num_rounds if num_rounds is not None else fcfg["num_rounds"]
     log_every = fcfg.get("log_every_batches", 20)   # logging cadence only
     for rnd in range(rounds):
+        round_lr = lr_schedule(rnd) if lr_schedule is not None else fcfg["lr"]
+        round_losses: list = []
         results = []
         for cid, loader in clients.items():
             ctx = f"round {rnd + 1}/{rounds} | client {cid}"
@@ -78,9 +91,10 @@ def run_federated(cfg: dict, logger=None, include_clients=None,
             else:
                 updated, n = local_train(
                     model, loader, global_params,
-                    epochs=fcfg["local_epochs"], lr=fcfg["lr"],
+                    epochs=fcfg["local_epochs"], lr=round_lr,
                     weight_decay=fcfg["weight_decay"], device=device,
-                    logger=logger, log_ctx=ctx, log_every=log_every)
+                    logger=logger, log_ctx=ctx, log_every=log_every,
+                    pos_weight=pos_weight, losses_out=round_losses)
             results.append((updated, n))
 
         global_params = weighted_average([p for p, _ in results],
@@ -89,11 +103,17 @@ def run_federated(cfg: dict, logger=None, include_clients=None,
             history.add_round(rnd, global_params, results)
 
         set_params(model, global_params)
-        y_true, y_score = collect_predictions(model, dm["val"], device)
-        val_metrics = multilabel_metrics(y_true, y_score, fcfg.get("threshold", 0.5))
-        if logger:
-            logger.info("round %d | val macro_auc=%.3f mAP=%.3f",
-                        rnd + 1, val_metrics["macro_auc"], val_metrics["mAP"])
+        if on_round_end is not None:
+            train_loss = (float(sum(round_losses) / len(round_losses))
+                          if round_losses else None)
+            if on_round_end(rnd, model, train_loss, round_lr):
+                break
+        else:
+            y_true, y_score = collect_predictions(model, dm["val"], device)
+            val_metrics = multilabel_metrics(y_true, y_score, fcfg.get("threshold", 0.5))
+            if logger:
+                logger.info("round %d | val macro_auc=%.3f mAP=%.3f",
+                            rnd + 1, val_metrics["macro_auc"], val_metrics["mAP"])
 
     set_params(model, global_params)
     return {"model": model, "global_params": global_params,

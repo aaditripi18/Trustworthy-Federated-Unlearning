@@ -1,0 +1,26 @@
+# Stage-1 baseline optimization run (base federated learning ONLY).
+# Loaded by scripts/train_baseline.py, which starts from data_nih + model_nih +
+# federated + eval configs and applies the overrides below. This file does NOT
+# touch the shared federated.yaml, so tests / later Oracle-Plain-EPU stages are
+# unaffected. No Oracle, no unlearning, no EPU, single seed.
+
+seeds: [42, 43]                # two independent seeds; both run and reported (not tuned on)
+
+baseline:
+  # --- improved training regime (approved) ---
+  num_rounds: 30               # FedAvg rounds (was 3); early stopping may cut short
+  local_epochs: 2              # local epochs per round (was 1)
+  base_lr: 0.0002              # peak LR (was 0.001); suited to pretrained DeiT fine-tune
+  warmup_rounds: 3             # linear LR warmup, then...
+  lr_schedule: cosine          # ...cosine decay to ~0 over remaining rounds
+  weight_decay: 0.0001
+
+  # --- class-imbalance handling (approved) ---
+  use_pos_weight: true         # BCEWithLogitsLoss(pos_weight = neg/pos per label)
+  pos_weight_cap: 20.0         # clip ultra-rare-class weights for stability
+
+  # --- monitoring / stopping ---
+  early_stop_patience: 5       # stop if val macro-AUROC does not improve for N rounds
+  eval_threshold: 0.5          # threshold for F1/precision/recall logging (AUROC/mAP are threshold-free)
+
+  out_dir: experiments/baseline

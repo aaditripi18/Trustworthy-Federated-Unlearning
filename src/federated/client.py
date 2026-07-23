@@ -24,11 +24,17 @@ def set_params(model, params: list[np.ndarray]) -> None:
 
 def local_train(model, loader, global_params: list[np.ndarray],
                 epochs: int, lr: float, weight_decay: float, device: str,
-                logger=None, log_ctx="", log_every: int = 20):
+                logger=None, log_ctx="", log_every: int = 20,
+                pos_weight=None, losses_out=None):
     """Start from the global params, train locally, return (updated_params, n).
 
-    logger/log_ctx/log_every are logging-ONLY and default to no-ops, so existing
-    callers and the training math are unchanged.
+    logger/log_ctx/log_every are logging-ONLY and default to no-ops.
+    pos_weight : optional (L,) tensor/array for BCEWithLogitsLoss(pos_weight=...).
+                 When None (default) the loss is standard BCE, so existing callers
+                 are byte-for-byte unchanged. The FedAvg algorithm is untouched;
+                 only the per-sample loss weighting changes when supplied.
+    losses_out : optional list; the final epoch's mean training loss is appended
+                 (for per-round logging). Purely observational.
     """
     import torch
 
@@ -36,11 +42,17 @@ def local_train(model, loader, global_params: list[np.ndarray],
 
     set_params(model, global_params)
     model.to(device)
-    criterion = torch.nn.BCEWithLogitsLoss()
+    pw = None
+    if pos_weight is not None:
+        pw = torch.as_tensor(pos_weight, dtype=torch.float32, device=device)
+    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pw)
     optim = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    last_loss = None
     for ep in range(epochs):
-        train_one_epoch(model, loader, optim, criterion, device,
-                        logger=logger, log_ctx=log_ctx, epoch=ep + 1, epochs=epochs,
-                        log_every=log_every)
+        last_loss = train_one_epoch(model, loader, optim, criterion, device,
+                                    logger=logger, log_ctx=log_ctx, epoch=ep + 1,
+                                    epochs=epochs, log_every=log_every)
+    if losses_out is not None and last_loss is not None:
+        losses_out.append(float(last_loss))
     n = len(loader.dataset)
     return get_params(model), n
