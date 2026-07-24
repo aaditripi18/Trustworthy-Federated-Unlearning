@@ -33,7 +33,8 @@ def available_methods() -> list[str]:
 
 @register("finetune_retain")
 def finetune_retain(cfg: dict, forget_client: int, original_params,
-                    logger=None, dm=None) -> dict:
+                    logger=None, dm=None, pos_weight=None, lr_schedule=None,
+                    on_round_end=None) -> dict:
     """Warm-started continued FedAvg on the remaining clients only.
 
     Starts from the trained global model and continues federated training with the
@@ -52,7 +53,9 @@ def finetune_retain(cfg: dict, forget_client: int, original_params,
 
     t0 = time.perf_counter()
     out = run_federated(cfg, logger=logger, include_clients=keep,
-                        init_params=original_params, num_rounds=rounds, dm=dm)
+                        init_params=original_params, num_rounds=rounds, dm=dm,
+                        pos_weight=pos_weight, lr_schedule=lr_schedule,
+                        on_round_end=on_round_end)
     out["wall_time_s"] = time.perf_counter() - t0
     out["method"] = "finetune_retain"
     out["kept_clients"] = keep

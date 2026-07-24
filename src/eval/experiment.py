@@ -21,7 +21,8 @@ import pandas as pd
 
 # numeric metric columns produced per evaluated model
 METRIC_COLS = [
-    "macro_auc", "mAP", "macro_f1", "micro_f1",           # diagnostic
+    "macro_auc", "micro_auc", "mAP", "macro_f1", "micro_f1",  # diagnostic
+    "precision", "recall",
     "forget_loss", "mia_auc", "pred_dist_to_oracle",       # forgetting
     "expl_cos_to_oracle", "expl_pearson_to_oracle",
     "expl_iou_to_oracle", "expl_mse_to_oracle",            # explanation
@@ -44,13 +45,15 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None) -> 
     from src.eval.metrics import multilabel_metrics
     from src.explain.extract import explain_loader, model_grid
     from src.explain.metrics import compare_maps
-    from src.federated.client import get_params
+    from src.federated.client import get_params, set_params
+    from src.federated.schedule import make_lr_schedule
     from src.federated.server import run_federated
     from src.models.vit import build_model, resolve_device
     from src.unlearning.methods import get_method
     from src.unlearning.oracle import retrain_oracle
     from src.unlearning.verify import (_forget_eval_loader, bce_per_sample,
                                        mia_auc, pred_distance)
+    from src.utils.imbalance import compute_pos_weight
     from src.utils.seed import set_seed
 
     cfg = copy.deepcopy(base_cfg)
@@ -72,9 +75,52 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None) -> 
     dm = build_datamodule(cfg)
     forget_loader = _forget_eval_loader(cfg, dm, forget)
 
-    # Progress/ETA logging (Opt 5): count the model builds up front so each log
-    # line can report "[i/total]" and a running ETA. Purely cosmetic.
-    total_stages = 3 + len(lambdas)   # original + plain + oracle + one per lambda
+    # ---- frozen baseline regime: ONE pos_weight (all methods), two schedules ----
+    fcfg = cfg["federated"]
+    patience = fcfg.get("early_stop_patience")
+    pos_weight = (compute_pos_weight(dm["manifest"][dm["manifest"].split == "train"],
+                                     cap=fcfg.get("pos_weight_cap", 20.0))
+                  if fcfg.get("use_pos_weight", False) else None)
+    scratch_sched = make_lr_schedule(fcfg["lr"], fed_rounds, fcfg.get("warmup_rounds", 0),
+                                     fcfg.get("lr_schedule", "constant"))          # Original/Oracle
+    ft_lr = cfg["unlearn"].get("finetune_lr", fcfg["lr"])
+    ft_sched = make_lr_schedule(ft_lr, ft_rounds, 0, "constant")                    # Plain/EPU
+
+    def _val_metrics(model):
+        yt, ps = collect_predictions(model, dm["val"], device)   # VAL: selection only
+        return multilabel_metrics(yt, ps, thr)
+
+    def make_cb(name, total, track_best):
+        """Per-round val diagnostics logger; best-checkpoint + early-stop if track_best."""
+        st = {"best": -1.0, "best_params": None, "no_improve": 0, "stopped": False, "rounds_run": 0}
+
+        def cb(rnd, model, train_loss, lr):
+            st["rounds_run"] = rnd + 1
+            m = _val_metrics(model)
+            tag = ""
+            if track_best:
+                if m["macro_auc"] > st["best"] + 1e-5:
+                    st["best"] = m["macro_auc"]; st["best_params"] = get_params(model)
+                    st["no_improve"] = 0; tag = "  <== NEW BEST (checkpoint)"
+                else:
+                    st["no_improve"] += 1
+            if logger:
+                logger.info(
+                    "%s | round %d/%d | val macroAUC=%.4f microAUC=%.4f mAP=%.4f F1=%.4f "
+                    "P=%.4f R=%.4f | lr=%.2e | train_loss=%s%s", name, rnd + 1, total,
+                    m["macro_auc"], m["micro_auc"], m["mAP"], m["macro_f1"], m["precision"],
+                    m["recall"], lr, "n/a" if train_loss is None else f"{train_loss:.4f}", tag)
+            if track_best and patience and st["no_improve"] >= patience:
+                st["stopped"] = True
+                if logger:
+                    logger.info("%s | EARLY STOP (best val macroAUC=%.4f @round %d)",
+                                name, st["best"], rnd + 1 - st["no_improve"])
+                return True
+            return False
+        return cb, st
+
+    # Progress/ETA logging: count model builds up front for "[i/total]" + ETA.
+    total_stages = 3 + len(lambdas)
     seed_t0 = time.perf_counter()
     _done = 0
 
@@ -87,42 +133,63 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None) -> 
             logger.info("seed %d | stage %d/%d done (%s) | elapsed %.1fs | eta %.1fs",
                         seed, _done, total_stages, name, el, eta)
 
-    # base (original), oracle, plain, epu@lambda
+    # --- Original: from-scratch regime, best-checkpoint on val ---
+    base_cb, base_st = make_cb("original", fed_rounds, track_best=True)
     t0 = time.perf_counter()
-    base = run_federated(cfg, logger=logger, dm=dm)
+    base = run_federated(cfg, logger=logger, dm=dm, pos_weight=pos_weight,
+                         lr_schedule=scratch_sched, on_round_end=base_cb)
     base_t = time.perf_counter() - t0
-    orig_params = get_params(base["model"])
+    if base_st["best_params"] is not None:
+        set_params(base["model"], base_st["best_params"])   # use BEST, not final
+    orig_params = get_params(base["model"])                 # warm-start source for Plain/EPU
     _tick("original")
-    oracle = retrain_oracle(cfg, forget, logger=logger, dm=dm)
+
+    # --- Oracle: IDENTICAL regime, only the forget client is excluded ---
+    oracle_cb, oracle_st = make_cb("oracle", fed_rounds, track_best=True)
+    oracle = retrain_oracle(cfg, forget, logger=logger, dm=dm, pos_weight=pos_weight,
+                            lr_schedule=scratch_sched, on_round_end=oracle_cb)
+    if oracle_st["best_params"] is not None:
+        set_params(oracle["model"], oracle_st["best_params"])
     _tick("oracle")
-    plain = get_method("finetune_retain")(cfg, forget, orig_params, logger=logger, dm=dm)
+
+    # --- Plain: warm-start finetune (final model = operating point) ---
+    plain_cb, plain_st = make_cb("finetune_retain", ft_rounds, track_best=False)
+    plain = get_method("finetune_retain")(cfg, forget, orig_params, logger=logger, dm=dm,
+                                          pos_weight=pos_weight, lr_schedule=ft_sched,
+                                          on_round_end=plain_cb)
     _tick("finetune_retain")
-    epus = {}
+
+    # --- EPU per lambda: identical to Plain except the explanation loss ---
+    epus, epu_sts = {}, {}
     for lam in lambdas:
         cfg["unlearn"]["explanation_lambda"] = lam
-        epus[lam] = get_method("epu")(cfg, forget, orig_params, logger=logger, dm=dm)
+        epu_cb, epu_sts[lam] = make_cb(f"epu@{lam:g}", ft_rounds, track_best=False)
+        epus[lam] = get_method("epu")(cfg, forget, orig_params, logger=logger, dm=dm,
+                                      pos_weight=pos_weight, lr_schedule=ft_sched,
+                                      on_round_end=epu_cb)
         _tick(f"epu@{lam:g}")
 
     grid = model_grid(base["model"], cfg["data"]["image_size"], cfg["model"]["patch_size"])
     def maps_of(m):
-        return explain_loader(m, dm["val"], grid, device, em, max_images=k)[0]
+        return explain_loader(m, dm["test"], grid, device, em, max_images=k)[0]  # probes on TEST
 
-    # oracle reference probes
+    # oracle reference probes (held-out TEST)
     _, o_pf = collect_predictions(oracle["model"], forget_loader, device)
-    _, o_pv = collect_predictions(oracle["model"], dm["val"], device)
+    _, o_pv = collect_predictions(oracle["model"], dm["test"], device)
     oracle_probe = np.concatenate([o_pf, o_pv])
     oracle_maps = maps_of(oracle["model"])
 
     def evaluate(model, method, lam, wall_time, rounds):
-        yv_true, pv = collect_predictions(model, dm["val"], device)      # val: labels + preds
+        yv_true, pv = collect_predictions(model, dm["test"], device)     # TEST: reporting split
         diag = multilabel_metrics(yv_true, pv, thr)
         yf_true, pf = collect_predictions(model, forget_loader, device)  # forget: labels + preds
-        member_loss = bce_per_sample(yf_true, pf)          # trained-on (for original) samples
-        nonmember_loss = bce_per_sample(yv_true, pv)       # held-out val samples
+        member_loss = bce_per_sample(yf_true, pf)          # forgotten-client samples
+        nonmember_loss = bce_per_sample(yv_true, pv)       # held-out TEST samples (non-member)
         row = {"seed": seed, "method": method, "lambda": lam,
                "config": config_label(method, lam),
-               "macro_auc": diag["macro_auc"], "mAP": diag["mAP"],
-               "macro_f1": diag["macro_f1"], "micro_f1": diag["micro_f1"],
+               "macro_auc": diag["macro_auc"], "micro_auc": diag["micro_auc"],
+               "mAP": diag["mAP"], "macro_f1": diag["macro_f1"], "micro_f1": diag["micro_f1"],
+               "precision": diag["precision"], "recall": diag["recall"],
                "forget_loss": float(member_loss.mean()),
                "mia_auc": mia_auc(member_loss, nonmember_loss)}
         probe = np.concatenate([pf, pv])
@@ -142,12 +209,13 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None) -> 
         return row
 
     results = [
-        evaluate(base["model"], "original", None, base_t, fed_rounds),
-        evaluate(plain["model"], "finetune_retain", None, plain["wall_time_s"], ft_rounds),
-        evaluate(oracle["model"], "oracle", None, oracle["wall_time_s"], fed_rounds),
+        evaluate(base["model"], "original", None, base_t, base_st["rounds_run"]),
+        evaluate(plain["model"], "finetune_retain", None, plain["wall_time_s"], plain_st["rounds_run"]),
+        evaluate(oracle["model"], "oracle", None, oracle["wall_time_s"], oracle_st["rounds_run"]),
     ]
     for lam in lambdas:
-        results.append(evaluate(epus[lam]["model"], "epu", lam, epus[lam]["wall_time_s"], ft_rounds))
+        results.append(evaluate(epus[lam]["model"], "epu", lam, epus[lam]["wall_time_s"],
+                                epu_sts[lam]["rounds_run"]))
     return results
 
 
@@ -184,6 +252,11 @@ def build_tables(df: pd.DataFrame) -> dict:
     comparison = pd.DataFrame({
         "config": order,
         "macro_auc": [cell(c, "macro_auc") for c in order],
+        "micro_auc": [cell(c, "micro_auc") for c in order],
+        "mAP": [cell(c, "mAP") for c in order],
+        "macro_f1": [cell(c, "macro_f1") for c in order],
+        "precision": [cell(c, "precision") for c in order],
+        "recall": [cell(c, "recall") for c in order],
         "mia_auc": [cell(c, "mia_auc") for c in order],
         "forget_loss": [cell(c, "forget_loss") for c in order],
         "expl_cos_to_oracle": [cell(c, "expl_cos_to_oracle") for c in order],

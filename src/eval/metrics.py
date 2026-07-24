@@ -14,7 +14,7 @@ import numpy as np
 
 try:
     from sklearn.metrics import (average_precision_score, f1_score,
-                                 roc_auc_score)
+                                 precision_score, recall_score, roc_auc_score)
     _HAVE_SK = True
 except ImportError:  # pragma: no cover - exercised only without sklearn
     _HAVE_SK = False
@@ -83,17 +83,25 @@ def multilabel_metrics(y_true: np.ndarray, y_score: np.ndarray,
         macro_ap = float(average_precision_score(y_true, y_score, average="macro"))
         macro_f1 = float(f1_score(y_true, y_pred, average="macro", zero_division=0))
         micro_f1 = float(f1_score(y_true, y_pred, average="micro", zero_division=0))
+        micro_auc = (float(roc_auc_score(y_true.ravel(), y_score.ravel()))
+                     if len(np.unique(y_true)) > 1 else float("nan"))
+        precision = float(precision_score(y_true, y_pred, average="macro", zero_division=0))
+        recall = float(recall_score(y_true, y_pred, average="macro", zero_division=0))
     else:  # pragma: no cover
         per_auc = [_auc_binary(y_true[:, i], y_score[:, i]) for i in range(L)]
         aps = [_ap_binary(y_true[:, i], y_score[:, i]) for i in range(L)]
         macro_ap = float(np.nanmean(aps)) if not np.all(np.isnan(aps)) else float("nan")
         macro_f1 = _f1_macro(y_true, y_pred)
         micro_f1 = _f1_micro(y_true, y_pred)
+        micro_auc = _auc_binary(y_true.ravel(), y_score.ravel())
+        precision = _precision_macro(y_true, y_pred)
+        recall = _recall_macro(y_true, y_pred)
 
     valid = [a for a in per_auc if not np.isnan(a)]
     macro_auc = float(np.mean(valid)) if valid else float("nan")
-    return {"per_class_auc": per_auc, "macro_auc": macro_auc,
-            "mAP": macro_ap, "macro_f1": macro_f1, "micro_f1": micro_f1}
+    return {"per_class_auc": per_auc, "macro_auc": macro_auc, "micro_auc": micro_auc,
+            "mAP": macro_ap, "macro_f1": macro_f1, "micro_f1": micro_f1,
+            "precision": precision, "recall": recall}
 
 
 def _f1_from_counts(tp, fp, fn) -> float:
@@ -116,3 +124,21 @@ def _f1_micro(y_true, y_pred) -> float:  # pragma: no cover
     fp = int(((y_pred == 1) & (y_true == 0)).sum())
     fn = int(((y_pred == 0) & (y_true == 1)).sum())
     return _f1_from_counts(tp, fp, fn)
+
+
+def _precision_macro(y_true, y_pred) -> float:  # pragma: no cover
+    vals = []
+    for i in range(y_true.shape[1]):
+        tp = int(((y_pred[:, i] == 1) & (y_true[:, i] == 1)).sum())
+        fp = int(((y_pred[:, i] == 1) & (y_true[:, i] == 0)).sum())
+        vals.append(tp / (tp + fp) if (tp + fp) > 0 else 0.0)
+    return float(np.mean(vals))
+
+
+def _recall_macro(y_true, y_pred) -> float:  # pragma: no cover
+    vals = []
+    for i in range(y_true.shape[1]):
+        tp = int(((y_pred[:, i] == 1) & (y_true[:, i] == 1)).sum())
+        fn = int(((y_pred[:, i] == 0) & (y_true[:, i] == 1)).sum())
+        vals.append(tp / (tp + fn) if (tp + fn) > 0 else 0.0)
+    return float(np.mean(vals))

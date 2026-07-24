@@ -4,9 +4,16 @@
 seed: 42
 
 federated:
-  num_rounds: 3
-  local_epochs: 1
-  lr: 0.001
+  # Frozen Stage-1 baseline regime (validated on 2 seeds): the SINGLE from-scratch
+  # training regime used by Original and Oracle. Do not diverge these two.
+  num_rounds: 30
+  local_epochs: 2
+  lr: 0.0002              # peak LR for warmup+cosine
+  warmup_rounds: 3        # linear warmup, then cosine decay to ~0
+  lr_schedule: cosine
+  use_pos_weight: true    # BCEWithLogitsLoss(pos_weight = neg/pos per label)
+  pos_weight_cap: 20.0
+  early_stop_patience: 5  # early stop + best-checkpoint on val macro-AUROC
   weight_decay: 0.0001
   device: auto
   ckpt_dir: experiments

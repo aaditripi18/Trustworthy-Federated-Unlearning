@@ -19,7 +19,8 @@ def _row(seed, method, lam, cos, mia, auc):
     return {
         "seed": seed, "method": method, "lambda": lam,
         "config": method if method != "epu" else f"epu@{lam:g}",
-        "macro_auc": auc, "mAP": auc, "macro_f1": 0.0, "micro_f1": 0.0,
+        "macro_auc": auc, "micro_auc": auc, "mAP": auc, "macro_f1": 0.0, "micro_f1": 0.0,
+        "precision": 0.1, "recall": 0.5,
         "forget_loss": 0.5, "mia_auc": mia, "pred_dist_to_oracle": 1.0 - cos,
         "expl_cos_to_oracle": cos, "expl_pearson_to_oracle": cos,
         "expl_iou_to_oracle": cos, "expl_mse_to_oracle": 1.0 - cos,

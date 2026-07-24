@@ -17,7 +17,8 @@ from .methods import register
 
 
 @register("epu")
-def epu(cfg: dict, forget_client: int, original_params, logger=None, dm=None) -> dict:
+def epu(cfg: dict, forget_client: int, original_params, logger=None, dm=None,
+        pos_weight=None, lr_schedule=None, on_round_end=None) -> dict:
     from src.explain.extract import model_grid
     from src.federated.client import set_params
     from src.federated.server import run_federated
@@ -38,20 +39,25 @@ def epu(cfg: dict, forget_client: int, original_params, logger=None, dm=None) ->
         p.requires_grad_(False)
     grid = model_grid(reference, image_size, cfg["model"]["patch_size"])
 
+    # constant finetune LR, IDENTICAL to Plain (finetune_retain); the only
+    # difference between Plain and EPU is the explanation-consistency term.
+    ft_lr = cfg["unlearn"].get("finetune_lr", cfg["federated"]["lr"])
+
     def local_fn(model, loader, global_params, device,
                  logger=None, log_ctx="", log_every=20):
         return local_train_epu(
             model, reference, loader, global_params, grid,
-            epochs=cfg["federated"]["local_epochs"], lr=cfg["federated"]["lr"],
+            epochs=cfg["federated"]["local_epochs"], lr=ft_lr,
             weight_decay=cfg["federated"]["weight_decay"], lam=lam, device=device,
-            logger=logger, log_ctx=log_ctx, log_every=log_every)
+            logger=logger, log_ctx=log_ctx, log_every=log_every, pos_weight=pos_weight)
 
     if logger:
-        logger.info("Unlearn[epu]: %d rounds on clients %s, lambda=%.3f", rounds, keep, lam)
+        logger.info("Unlearn[epu]: %d rounds on clients %s, lambda=%.3f, ft_lr=%.1e",
+                    rounds, keep, lam, ft_lr)
     t0 = time.perf_counter()
     out = run_federated(cfg, logger=logger, include_clients=keep,
                         init_params=original_params, num_rounds=rounds,
-                        local_fn=local_fn, dm=dm)
+                        local_fn=local_fn, dm=dm, on_round_end=on_round_end)
     out["wall_time_s"] = time.perf_counter() - t0
     out["method"] = "epu"
     out["kept_clients"] = keep
@@ -61,7 +67,7 @@ def epu(cfg: dict, forget_client: int, original_params, logger=None, dm=None) ->
 
 def local_train_epu(model, reference, loader, global_params, grid,
                     epochs, lr, weight_decay, lam, device,
-                    logger=None, log_ctx="", log_every=20):
+                    logger=None, log_ctx="", log_every=20, pos_weight=None):
     """EPU local update. logger/log_ctx/log_every are logging-ONLY (no effect on
     the loss, optimizer, data order, or RNG); default no-ops preserve behavior."""
     import torch
@@ -74,7 +80,8 @@ def local_train_epu(model, reference, loader, global_params, grid,
     set_params(model, global_params)
     model.to(device)
     model.train()
-    criterion = torch.nn.BCEWithLogitsLoss()
+    pw = None if pos_weight is None else torch.as_tensor(pos_weight, dtype=torch.float32, device=device)
+    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pw)   # same pos_weight as Plain
     optim = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     nb = _num_batches(loader)

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,6 +55,24 @@ def main() -> int:
     from src.utils.repro import write_reproducibility
 
     cfg = _load_cfg()
+
+    # Smoke mode (RUN_FINAL_SMOKE=1): exercise the FULL pipeline (Original, Oracle,
+    # Plain, EPU) end-to-end on a tiny subset for 1 round / 1 finetune round / 1 seed
+    # / 1 lambda, verifying regime propagation before the multi-day run. Writes to a
+    # SEPARATE dir so the real experiments/full_experiment/ stays clean.
+    if os.environ.get("RUN_FINAL_SMOKE"):
+        cfg["data"]["nih"]["subset_size"] = 300
+        cfg["federated"]["num_rounds"] = 1
+        cfg["federated"]["local_epochs"] = 1
+        cfg["federated"]["early_stop_patience"] = 99      # don't early-stop a 1-round smoke
+        cfg["unlearn"]["finetune_rounds"] = 1
+        cfg["evaluation"]["seeds"] = [42]
+        cfg["evaluation"]["lambdas"] = [0.5]
+        cfg["explain"]["num_probe_images"] = 16
+        cfg["evaluation"]["out_dir"] = "experiments/full_experiment_smoke"
+        log.info("RUN_FINAL SMOKE MODE: subset 300, 1 round, 1 finetune round, 1 seed, "
+                 "1 lambda -> experiments/full_experiment_smoke")
+
     exp = REPO_ROOT / get(cfg, "evaluation.out_dir", "experiments")
     seeds = cfg["evaluation"]["seeds"]
     lambdas = cfg["evaluation"]["lambdas"]
