@@ -36,8 +36,17 @@ def config_label(method: str, lam) -> str:
 
 # ---------------------------------------------------------------- torch part
 
-def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None) -> list[dict]:
-    """Run the full chain for one seed and return one result dict per model."""
+def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
+               ckpt_dir=None) -> list[dict]:
+    """Run the full chain for one seed and return one result dict per model.
+
+    ckpt_dir : optional directory for per-seed model checkpoints. When set, each
+               finalized model (Original/Oracle/Plain/EPU) is atomically saved
+               right after it is produced. Artifact-only: the saves read
+               state_dicts and serialize them; they consume no RNG and mutate
+               nothing, so training, evaluation, and all outputs are unchanged.
+               No-op when None.
+    """
     import torch  # noqa: F401
 
     from src.data.dataset import build_datamodule
@@ -133,6 +142,22 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None) -> 
             logger.info("seed %d | stage %d/%d done (%s) | elapsed %.1fs | eta %.1fs",
                         seed, _done, total_stages, name, el, eta)
 
+    def _save_ckpt(model, name):
+        """Atomic checkpoint write (tmp -> replace). Artifact-only: reads the
+        finalized model's state_dict and serializes it — consumes no RNG and
+        mutates nothing. No-op when ckpt_dir is None."""
+        if ckpt_dir is None:
+            return
+        d = Path(ckpt_dir)
+        d.mkdir(parents=True, exist_ok=True)
+        payload = {"state_dict": model.state_dict(), "seed": seed,
+                   "model": cfg["model"]["name"], "config": cfg}
+        tmp = d / (name + ".tmp")
+        torch.save(payload, tmp)
+        tmp.replace(d / name)                                # atomic rename
+        if logger:
+            logger.info("saved checkpoint %s", d / name)
+
     # --- Original: from-scratch regime, best-checkpoint on val ---
     base_cb, base_st = make_cb("original", fed_rounds, track_best=True)
     t0 = time.perf_counter()
@@ -142,6 +167,7 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None) -> 
     if base_st["best_params"] is not None:
         set_params(base["model"], base_st["best_params"])   # use BEST, not final
     orig_params = get_params(base["model"])                 # warm-start source for Plain/EPU
+    _save_ckpt(base["model"], "original.pt")                # == the evaluated Original
     _tick("original")
 
     # --- Oracle: IDENTICAL regime, only the forget client is excluded ---
@@ -150,6 +176,7 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None) -> 
                             lr_schedule=scratch_sched, on_round_end=oracle_cb)
     if oracle_st["best_params"] is not None:
         set_params(oracle["model"], oracle_st["best_params"])
+    _save_ckpt(oracle["model"], "oracle.pt")                # == the evaluated Oracle
     _tick("oracle")
 
     # --- Plain: warm-start finetune (final model = operating point) ---
@@ -157,6 +184,7 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None) -> 
     plain = get_method("finetune_retain")(cfg, forget, orig_params, logger=logger, dm=dm,
                                           pos_weight=pos_weight, lr_schedule=ft_sched,
                                           on_round_end=plain_cb)
+    _save_ckpt(plain["model"], "plain.pt")                  # == the evaluated Plain
     _tick("finetune_retain")
 
     # --- EPU per lambda: identical to Plain except the explanation loss ---
@@ -167,6 +195,7 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None) -> 
         epus[lam] = get_method("epu")(cfg, forget, orig_params, logger=logger, dm=dm,
                                       pos_weight=pos_weight, lr_schedule=ft_sched,
                                       on_round_end=epu_cb)
+        _save_ckpt(epus[lam]["model"], f"epu_lambda{lam}.pt")  # == the evaluated EPU@lam
         _tick(f"epu@{lam:g}")
 
     grid = model_grid(base["model"], cfg["data"]["image_size"], cfg["model"]["patch_size"])

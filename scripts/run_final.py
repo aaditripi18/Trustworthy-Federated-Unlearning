@@ -111,7 +111,8 @@ def main() -> int:
             results.extend(json.loads(pfile.read_text()))
             continue
         log.info("=== seed %d ===", seed)
-        seed_results = run_single(cfg, seed, lambdas, logger=log)
+        seed_results = run_single(cfg, seed, lambdas, logger=log,
+                                  ckpt_dir=exp / f"seed_{seed}")
         tmp = pfile.with_suffix(".json.tmp")        # atomic: write tmp then replace
         # default handles numpy scalars (np.float64/int64) that json can't natively.
         tmp.write_text(json.dumps(seed_results,
