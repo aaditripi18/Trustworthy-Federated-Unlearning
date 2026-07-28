@@ -111,8 +111,10 @@ def main() -> int:
             results.extend(json.loads(pfile.read_text()))
             continue
         log.info("=== seed %d ===", seed)
+        reuse_base = os.environ.get("RUN_FINAL_REUSE")   # e.g. experiments/full_experiment
+        reuse_dir = (REPO_ROOT / reuse_base / f"seed_{seed}") if reuse_base else None
         seed_results = run_single(cfg, seed, lambdas, logger=log,
-                                  ckpt_dir=exp / f"seed_{seed}")
+                                  ckpt_dir=exp / f"seed_{seed}", reuse_ckpt_dir=reuse_dir)
         tmp = pfile.with_suffix(".json.tmp")        # atomic: write tmp then replace
         # default handles numpy scalars (np.float64/int64) that json can't natively.
         tmp.write_text(json.dumps(seed_results,

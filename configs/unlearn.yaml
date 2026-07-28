@@ -5,8 +5,8 @@ seed: 42
 unlearn:
   forget_client: 0          # client id to forget (0 .. num_clients-1)
   method: finetune_retain   # registry key: finetune_retain | epu  (see src/unlearning/)
-  finetune_rounds: 2        # warm-started rounds (both finetune_retain and epu)
-  finetune_lr: 0.00002      # constant LR for the warm-started finetune (Plain & EPU, identical)
+  finetune_rounds: 5        # EXP-A1: warm-started rounds (both finetune_retain and epu)
+  finetune_lr: 0.0001       # EXP-A1: constant LR for the finetune (Plain & EPU, identical); Adam optimizer, constant schedule
   explanation_lambda: 1.0   # M6: weight of the explanation-consistency loss (epu only)
   device: auto
   ckpt_dir: experiments

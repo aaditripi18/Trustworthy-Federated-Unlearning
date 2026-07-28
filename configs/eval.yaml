@@ -4,7 +4,7 @@ seed: 42
 
 evaluation:
   seeds: [42, 43, 44]          # 3-seed publication-quality evaluation
-  lambdas: [0.5, 1.0]          # EPU explanation-loss weights to ablate (trimmed to 2)
+  lambdas: [1, 10, 30, 100]    # EXP-A1 lambda sweep (binding point ~ L_task/L_exp ~ 27)
   # Dedicated, clearly-named dir so the full Oracle/Plain/EPU run is fully isolated
   # from the frozen Stage-1 baseline (experiments/baseline/) and any stale root files.
-  out_dir: experiments/full_experiment
+  out_dir: experiments/exp_a1   # EXP-A1 isolated output (reuse canonical via RUN_FINAL_REUSE)

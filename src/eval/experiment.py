@@ -25,7 +25,9 @@ METRIC_COLS = [
     "precision", "recall",
     "forget_loss", "mia_auc", "pred_dist_to_oracle",       # forgetting
     "expl_cos_to_oracle", "expl_pearson_to_oracle",
-    "expl_iou_to_oracle", "expl_mse_to_oracle",            # explanation
+    "expl_iou_to_oracle", "expl_mse_to_oracle",            # explanation vs Oracle
+    "expl_cos_to_original", "expl_pearson_to_original",
+    "expl_iou_to_original", "expl_mse_to_original",        # explanation stability vs Original
     "wall_time_s", "rounds", "speedup_vs_oracle",          # efficiency
 ]
 
@@ -37,7 +39,7 @@ def config_label(method: str, lam) -> str:
 # ---------------------------------------------------------------- torch part
 
 def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
-               ckpt_dir=None) -> list[dict]:
+               ckpt_dir=None, reuse_ckpt_dir=None) -> list[dict]:
     """Run the full chain for one seed and return one result dict per model.
 
     ckpt_dir : optional directory for per-seed model checkpoints. When set, each
@@ -158,25 +160,61 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
         if logger:
             logger.info("saved checkpoint %s", d / name)
 
-    # --- Original: from-scratch regime, best-checkpoint on val ---
-    base_cb, base_st = make_cb("original", fed_rounds, track_best=True)
-    t0 = time.perf_counter()
-    base = run_federated(cfg, logger=logger, dm=dm, pos_weight=pos_weight,
-                         lr_schedule=scratch_sched, on_round_end=base_cb)
-    base_t = time.perf_counter() - t0
-    if base_st["best_params"] is not None:
-        set_params(base["model"], base_st["best_params"])   # use BEST, not final
-    orig_params = get_params(base["model"])                 # warm-start source for Plain/EPU
-    _save_ckpt(base["model"], "original.pt")                # == the evaluated Original
+    def _load_saved(name, cfgname):
+        """Reuse a saved base/oracle checkpoint instead of retraining.
+        ORCHESTRATION ONLY: weights are loaded verbatim; no training, no RNG use,
+        no change to the EPU/Plain algorithm or loss. Returns (model, wall_time,
+        rounds), or None to fall back to training."""
+        if reuse_ckpt_dir is None:
+            return None
+        p = Path(reuse_ckpt_dir) / name
+        if not p.exists():
+            return None
+        ck = torch.load(p, map_location=device)
+        m = build_model(cfg["model"], cfg["data"]["image_size"],
+                        cfg["data"]["num_labels"]).to(device)
+        m.load_state_dict(ck["state_dict"])
+        wt, rd = float("nan"), -1                            # carry forward source timing if present
+        src = Path(reuse_ckpt_dir).parent / "final_results.csv"
+        if src.exists():
+            import csv as _csv
+            for r in _csv.DictReader(open(src)):
+                if int(r["seed"]) == seed and r["config"] == cfgname:
+                    wt, rd = float(r["wall_time_s"]), int(r["rounds"]); break
+        if logger:
+            logger.info("REUSED %s from %s (skipped training)", name, reuse_ckpt_dir)
+        return m, wt, rd
+
+    # --- Original: from-scratch regime, best-checkpoint on val (or reuse saved) ---
+    _r = _load_saved("original.pt", "original")
+    if _r is not None:
+        base = {"model": _r[0]}; base_t, base_rounds = _r[1], _r[2]
+        orig_params = get_params(base["model"])
+    else:
+        base_cb, base_st = make_cb("original", fed_rounds, track_best=True)
+        t0 = time.perf_counter()
+        base = run_federated(cfg, logger=logger, dm=dm, pos_weight=pos_weight,
+                             lr_schedule=scratch_sched, on_round_end=base_cb)
+        base_t = time.perf_counter() - t0
+        if base_st["best_params"] is not None:
+            set_params(base["model"], base_st["best_params"])   # use BEST, not final
+        orig_params = get_params(base["model"])                 # warm-start source for Plain/EPU
+        base_rounds = base_st["rounds_run"]
+        _save_ckpt(base["model"], "original.pt")                # == the evaluated Original
     _tick("original")
 
-    # --- Oracle: IDENTICAL regime, only the forget client is excluded ---
-    oracle_cb, oracle_st = make_cb("oracle", fed_rounds, track_best=True)
-    oracle = retrain_oracle(cfg, forget, logger=logger, dm=dm, pos_weight=pos_weight,
-                            lr_schedule=scratch_sched, on_round_end=oracle_cb)
-    if oracle_st["best_params"] is not None:
-        set_params(oracle["model"], oracle_st["best_params"])
-    _save_ckpt(oracle["model"], "oracle.pt")                # == the evaluated Oracle
+    # --- Oracle: IDENTICAL regime, only the forget client is excluded (or reuse saved) ---
+    _ro = _load_saved("oracle.pt", "oracle")
+    if _ro is not None:
+        oracle = {"model": _ro[0], "wall_time_s": _ro[1]}; oracle_rounds = _ro[2]
+    else:
+        oracle_cb, oracle_st = make_cb("oracle", fed_rounds, track_best=True)
+        oracle = retrain_oracle(cfg, forget, logger=logger, dm=dm, pos_weight=pos_weight,
+                                lr_schedule=scratch_sched, on_round_end=oracle_cb)
+        if oracle_st["best_params"] is not None:
+            set_params(oracle["model"], oracle_st["best_params"])
+        oracle_rounds = oracle_st["rounds_run"]
+        _save_ckpt(oracle["model"], "oracle.pt")            # == the evaluated Oracle
     _tick("oracle")
 
     # --- Plain: warm-start finetune (final model = operating point) ---
@@ -207,6 +245,7 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
     _, o_pv = collect_predictions(oracle["model"], dm["test"], device)
     oracle_probe = np.concatenate([o_pf, o_pv])
     oracle_maps = maps_of(oracle["model"])
+    original_maps = maps_of(base["model"])                   # reference for explanation STABILITY
 
     def evaluate(model, method, lam, wall_time, rounds):
         yv_true, pv = collect_predictions(model, dm["test"], device)     # TEST: reporting split
@@ -222,25 +261,36 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
                "forget_loss": float(member_loss.mean()),
                "mia_auc": mia_auc(member_loss, nonmember_loss)}
         probe = np.concatenate([pf, pv])
+        m_maps = maps_of(model)                              # this model's maps, computed once
+        # --- explanation closeness to the ORACLE (existing secondary metric) ---
         if method == "oracle":
             row.update(pred_dist_to_oracle=0.0, expl_cos_to_oracle=1.0,
                        expl_pearson_to_oracle=1.0, expl_iou_to_oracle=1.0,
                        expl_mse_to_oracle=0.0)
         else:
-            cm = compare_maps(maps_of(model), oracle_maps, iou_thr)
+            cm = compare_maps(m_maps, oracle_maps, iou_thr)
             row.update(pred_dist_to_oracle=pred_distance(probe, oracle_probe),
                        expl_cos_to_oracle=cm["cosine_similarity"],
                        expl_pearson_to_oracle=cm["pearson"],
                        expl_iou_to_oracle=cm["iou"], expl_mse_to_oracle=cm["mse"])
+        # --- explanation STABILITY relative to the ORIGINAL (EXP-A0 primary metric) ---
+        if method == "original":
+            row.update(expl_cos_to_original=1.0, expl_pearson_to_original=1.0,
+                       expl_iou_to_original=1.0, expl_mse_to_original=0.0)
+        else:
+            co = compare_maps(m_maps, original_maps, iou_thr)
+            row.update(expl_cos_to_original=co["cosine_similarity"],
+                       expl_pearson_to_original=co["pearson"],
+                       expl_iou_to_original=co["iou"], expl_mse_to_original=co["mse"])
         row["wall_time_s"] = float(wall_time)
         row["rounds"] = int(rounds)
         row["speedup_vs_oracle"] = float(oracle["wall_time_s"] / wall_time) if wall_time > 0 else None
         return row
 
     results = [
-        evaluate(base["model"], "original", None, base_t, base_st["rounds_run"]),
+        evaluate(base["model"], "original", None, base_t, base_rounds),
         evaluate(plain["model"], "finetune_retain", None, plain["wall_time_s"], plain_st["rounds_run"]),
-        evaluate(oracle["model"], "oracle", None, oracle["wall_time_s"], oracle_st["rounds_run"]),
+        evaluate(oracle["model"], "oracle", None, oracle["wall_time_s"], oracle_rounds),
     ]
     for lam in lambdas:
         results.append(evaluate(epus[lam]["model"], "epu", lam, epus[lam]["wall_time_s"],
