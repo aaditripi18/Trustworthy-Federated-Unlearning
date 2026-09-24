@@ -11,3 +11,20 @@ experiments/*
 data/nih/
 
 data/*.zip
+
+# personal/course-submission files (contain names, reg numbers, faculty guide)
+BCSE497J_ProjectI_Report.docx
+Review2_TrustworthyFU.pptx
+Review2_TrustworthyFU_v2.pptx
+build_ppt.py
+report/build_report.js
+
+# raw AWS training run: multi-GB checkpoints + full logs, regenerable via
+# scripts/run_final.py; only the curated result summaries/figures are tracked
+# (force-added below the ignore, see push notes)
+ec2_final_run/
+
+# local envs / caches
+.venv/
+__pycache__/
+.pytest_cache/

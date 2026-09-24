@@ -1,0 +1,42 @@
+{
+  "timestamp_utc": "2026-07-28T03:04:53.068699+00:00",
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "python": "3.12.13",
+  "platform": "Linux-6.17.0-1019-aws-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "processor": "x86_64",
+  "hostname": "ip-172-31-94-94",
+  "cpu_count": 4,
+  "packages": {
+    "numpy": "2.5.1",
+    "pandas": "3.0.5",
+    "sklearn": "1.9.0",
+    "torch": "2.13.0+cu130",
+    "torchvision": "0.28.0+cu130",
+    "timm": "1.0.28",
+    "PIL": "12.3.0",
+    "matplotlib": "3.11.1",
+    "yaml": "6.0.3"
+  },
+  "cuda": {
+    "available": true,
+    "device_count": 1,
+    "device_name": "Tesla T4",
+    "total_memory_gb": 15.64
+  },
+  "git_commit": "a30a641",
+  "experiment": "M8 final (NIH ChestX-ray14)",
+  "dataset": "NIH ChestX-ray14",
+  "findings": {
+    "metric": "explanation cosine similarity to oracle (higher = closer)",
+    "plain_unlearning_cos_to_oracle": 0.9641,
+    "best_epu_config": "epu@0.5",
+    "best_epu_cos_to_oracle": 0.962,
+    "any_epu_beats_plain_on_explanation": false,
+    "statement": "Best EPU (epu@0.5) <= plain unlearning on explanation closeness to oracle. Reported as measured; not tuned to favor EPU."
+  }
+}

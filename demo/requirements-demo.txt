@@ -1,0 +1,6 @@
+# Extra packages for the demo dashboard (on top of your training environment).
+# torch + timm are already installed in your project venv from training.
+streamlit>=1.30
+matplotlib>=3.6
+pillow>=9.0
+# (numpy, pandas, torch, timm come from the main project requirements)

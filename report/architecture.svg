@@ -1,0 +1,109 @@
+<svg viewBox="0 0 1020 620" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, Arial, sans-serif">
+<rect x="0" y="0" width="1020" height="620" fill="#ffffff"/>
+<defs>
+<marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+<path d="M0 0 L10 5 L0 10 z" fill="#334155"/></marker>
+<style>
+.band{fill:none;stroke:#9aa3b2;stroke-width:1.5}
+.box{fill:#eef1f6;stroke:#5b6473;stroke-width:1.6}
+.acc{fill:#e2e6fb;stroke:#4338ca;stroke-width:2.4}
+.bt{fill:#0f172a;font-weight:800}
+.ct{fill:#111827;font-weight:700}
+.cs{fill:#2b3444;font-weight:500}
+.ln{stroke:#334155;stroke-width:1.8}
+</style>
+</defs>
+
+<text x="510" y="27" text-anchor="middle" class="bt" font-size="16">System Architecture — Attention-Fidelity-Preserving Federated Unlearning with ViT for Chest X-Rays</text>
+
+<rect class="band" x="14" y="42" width="992" height="98" rx="11"/>
+<text x="28" y="66" class="bt" font-size="15.5">1 · Data &amp; Partitioning</text>
+<g font-size="13.5">
+<rect class="box" x="26" y="74" width="228" height="56" rx="8"/>
+<text x="140" y="98" text-anchor="middle" class="ct">NIH ChestX-ray14</text>
+<text x="140" y="117" text-anchor="middle" class="cs" font-size="12">112,120 images · 14 labels</text>
+<rect class="box" x="268" y="74" width="228" height="56" rx="8"/>
+<text x="382" y="98" text-anchor="middle" class="ct">Preprocessing</text>
+<text x="382" y="117" text-anchor="middle" class="cs" font-size="12">grayscale · 224² · 1-channel</text>
+<rect class="box" x="510" y="74" width="228" height="56" rx="8"/>
+<text x="624" y="98" text-anchor="middle" class="ct">Patient-disjoint split</text>
+<text x="624" y="117" text-anchor="middle" class="cs" font-size="12">no patient leakage</text>
+<rect class="box" x="752" y="74" width="228" height="56" rx="8"/>
+<text x="866" y="98" text-anchor="middle" class="ct">Non-IID partition</text>
+<text x="866" y="117" text-anchor="middle" class="cs" font-size="12">Dirichlet α=0.5 · 5 clients</text>
+</g>
+<line class="ln" x1="510" y1="140" x2="510" y2="147" marker-end="url(#ar)"/>
+
+<rect class="band" x="14" y="150" width="992" height="112" rx="11"/>
+<text x="28" y="174" class="bt" font-size="15.5">2 · Federated Training — FedAvg</text>
+<g font-size="12">
+<rect class="box" x="26" y="182" width="300" height="72" rx="8"/>
+<text x="176" y="206" text-anchor="middle" class="ct" font-size="13.5">DeiT-Small clients ×5</text>
+<text x="176" y="226" text-anchor="middle" class="cs">local: Adam · pos-weight BCE</text>
+<text x="176" y="243" text-anchor="middle" class="cs">warmup + cosine LR</text>
+<line class="ln" x1="328" y1="218" x2="356" y2="218" marker-end="url(#ar)"/>
+<rect class="box" x="358" y="182" width="300" height="72" rx="8"/>
+<text x="508" y="206" text-anchor="middle" class="ct" font-size="13.5">Server — FedAvg</text>
+<text x="508" y="226" text-anchor="middle" class="cs">weighted averaging · 30 rounds</text>
+<text x="508" y="243" text-anchor="middle" class="cs">best-checkpoint + early stop</text>
+<line class="ln" x1="660" y1="218" x2="688" y2="218" marker-end="url(#ar)"/>
+<rect class="box" x="690" y="182" width="290" height="72" rx="8"/>
+<text x="835" y="206" text-anchor="middle" class="ct" font-size="13.5">Original global model</text>
+<text x="835" y="226" text-anchor="middle" class="cs">pre-unlearning classifier</text>
+<text x="835" y="243" text-anchor="middle" class="cs">(best checkpoint)</text>
+</g>
+<line class="ln" x1="510" y1="262" x2="510" y2="269" marker-end="url(#ar)"/>
+
+<rect class="band" x="14" y="272" width="992" height="128" rx="11"/>
+<text x="28" y="296" class="bt" font-size="15.5">3 · Federated Unlearning — forget client r (right to be forgotten, no full retrain)</text>
+<g font-size="12">
+<rect class="box" x="26" y="306" width="302" height="84" rx="8"/>
+<text x="177" y="332" text-anchor="middle" class="ct" font-size="13.5">Oracle (reference)</text>
+<text x="177" y="352" text-anchor="middle" class="cs">retrain from scratch</text>
+<text x="177" y="370" text-anchor="middle" class="cs">on retained clients — gold standard</text>
+<rect class="box" x="348" y="306" width="302" height="84" rx="8"/>
+<text x="499" y="332" text-anchor="middle" class="ct" font-size="13.5">Plain unlearning</text>
+<text x="499" y="352" text-anchor="middle" class="cs">finetune_retain (warm-start)</text>
+<text x="499" y="370" text-anchor="middle" class="cs">retained clients only</text>
+<rect class="acc" x="670" y="306" width="310" height="84" rx="8"/>
+<text x="825" y="332" text-anchor="middle" class="ct" font-size="13.5" fill="#1e1b4b">EPU ★ (proposed)</text>
+<text x="825" y="352" text-anchor="middle" class="cs" fill="#312e81">warm-start finetune + fidelity loss</text>
+<text x="825" y="370" text-anchor="middle" class="cs" fill="#312e81">L = L_task + λ·L_exp</text>
+</g>
+<line class="ln" x1="510" y1="400" x2="510" y2="407" marker-end="url(#ar)"/>
+<text x="524" y="404" class="cs" font-size="11.5">→ Unlearned global model</text>
+
+<rect class="band" x="14" y="410" width="992" height="106" rx="11"/>
+<text x="28" y="434" class="bt" font-size="15.5">4 · Evaluation — 4 axes · seeds 42/43/44 · held-out test set · mean ± std</text>
+<g font-size="12">
+<rect class="box" x="26" y="442" width="228" height="66" rx="8"/>
+<text x="140" y="466" text-anchor="middle" class="ct" font-size="13.5">Diagnosis</text>
+<text x="140" y="485" text-anchor="middle" class="cs">macro / micro AUROC</text>
+<text x="140" y="501" text-anchor="middle" class="cs">mAP · F1 · precision/recall</text>
+<rect class="box" x="268" y="442" width="228" height="66" rx="8"/>
+<text x="382" y="466" text-anchor="middle" class="ct" font-size="13.5">Forgetting</text>
+<text x="382" y="485" text-anchor="middle" class="cs">membership-inference AUC</text>
+<text x="382" y="501" text-anchor="middle" class="cs">forget-loss · dist → oracle</text>
+<rect class="acc" x="510" y="442" width="228" height="66" rx="8"/>
+<text x="624" y="466" text-anchor="middle" class="ct" font-size="13.5" fill="#1e1b4b">Explanation fidelity ★</text>
+<text x="624" y="485" text-anchor="middle" class="cs" fill="#312e81">Attention Rollout</text>
+<text x="624" y="501" text-anchor="middle" class="cs" fill="#312e81">cosine · Pearson · IoU · MSE</text>
+<rect class="box" x="752" y="442" width="228" height="66" rx="8"/>
+<text x="866" y="466" text-anchor="middle" class="ct" font-size="13.5">Efficiency</text>
+<text x="866" y="485" text-anchor="middle" class="cs">wall-time · rounds</text>
+<text x="866" y="501" text-anchor="middle" class="cs">speedup vs oracle</text>
+</g>
+<line class="ln" x1="510" y1="516" x2="510" y2="523" marker-end="url(#ar)"/>
+
+<rect class="band" x="14" y="526" width="992" height="58" rx="11"/>
+<text x="28" y="550" class="bt" font-size="15.5">5 · Artifacts &amp; Reproducibility</text>
+<g font-size="12" class="cs">
+<rect class="box" x="360" y="552" width="126" height="26" rx="7"/><text x="423" y="569" text-anchor="middle" class="cs">checkpoints .pt</text>
+<rect class="box" x="496" y="552" width="104" height="26" rx="7"/><text x="548" y="569" text-anchor="middle" class="cs">final_*.csv</text>
+<rect class="box" x="610" y="552" width="130" height="26" rx="7"/><text x="675" y="569" text-anchor="middle" class="cs">final_summary.json</text>
+<rect class="box" x="750" y="552" width="96" height="26" rx="7"/><text x="798" y="569" text-anchor="middle" class="cs">figures</text>
+<rect class="box" x="856" y="552" width="150" height="26" rx="7"/><text x="931" y="569" text-anchor="middle" class="cs">reproducibility.json</text>
+</g>
+
+<text x="510" y="606" text-anchor="middle" class="ct" font-size="12.5">★ = proposed research contribution</text>
+</svg>

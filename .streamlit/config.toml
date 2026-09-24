@@ -1,0 +1,5 @@
+# No [theme] block on purpose: pinning a theme here suppresses Streamlit's own
+# Light / Dark / System switcher (⋮ → Settings). The app's palette in
+# streamlit_app.py derives itself from the active theme, so both modes work.
+[browser]
+gatherUsageStats = false

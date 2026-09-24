@@ -1,0 +1,257 @@
+{
+  "experiment": "M8 final (NIH ChestX-ray14)",
+  "dataset": "NIH ChestX-ray14",
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "lambdas": [
+    1,
+    10,
+    30,
+    100
+  ],
+  "model": "deit_small_patch16_224",
+  "image_size": 224,
+  "num_clients": 5,
+  "partition": {
+    "scheme": "dirichlet",
+    "alpha": 0.5
+  },
+  "forget_client": 0,
+  "timestamp_utc": "2026-07-30T00:28:52.939964+00:00",
+  "tables": {
+    "comparison": [
+      {
+        "config": "original",
+        "macro_auc": "0.805\u00b10.007",
+        "micro_auc": "0.844\u00b10.007",
+        "mAP": "0.206\u00b10.007",
+        "macro_f1": "0.224\u00b10.004",
+        "precision": "0.148\u00b10.004",
+        "recall": "0.552\u00b10.009",
+        "mia_auc": "0.506\u00b10.029",
+        "forget_loss": "0.354\u00b10.036",
+        "expl_cos_to_oracle": "0.961\u00b10.006",
+        "pred_dist_to_oracle": "0.326\u00b10.027",
+        "wall_time_s": "17258.993\u00b13241.563",
+        "speedup_vs_oracle": "0.741\u00b10.166"
+      },
+      {
+        "config": "finetune_retain",
+        "macro_auc": "0.789\u00b10.002",
+        "micro_auc": "0.842\u00b10.004",
+        "mAP": "0.195\u00b10.001",
+        "macro_f1": "0.234\u00b10.007",
+        "precision": "0.160\u00b10.007",
+        "recall": "0.484\u00b10.030",
+        "mia_auc": "0.503\u00b10.035",
+        "forget_loss": "0.317\u00b10.043",
+        "expl_cos_to_oracle": "0.959\u00b10.009",
+        "pred_dist_to_oracle": "0.558\u00b10.045",
+        "wall_time_s": "6493.600\u00b1486.797",
+        "speedup_vs_oracle": "1.945\u00b10.438"
+      },
+      {
+        "config": "epu@1",
+        "macro_auc": "0.789\u00b10.002",
+        "micro_auc": "0.842\u00b10.005",
+        "mAP": "0.196\u00b10.001",
+        "macro_f1": "0.234\u00b10.003",
+        "precision": "0.159\u00b10.004",
+        "recall": "0.488\u00b10.018",
+        "mia_auc": "0.502\u00b10.037",
+        "forget_loss": "0.318\u00b10.040",
+        "expl_cos_to_oracle": "0.958\u00b10.005",
+        "pred_dist_to_oracle": "0.552\u00b10.034",
+        "wall_time_s": "8159.708\u00b11399.863",
+        "speedup_vs_oracle": "1.559\u00b10.322"
+      },
+      {
+        "config": "epu@10",
+        "macro_auc": "0.787\u00b10.004",
+        "micro_auc": "0.841\u00b10.005",
+        "mAP": "0.195\u00b10.001",
+        "macro_f1": "0.235\u00b10.008",
+        "precision": "0.159\u00b10.006",
+        "recall": "0.490\u00b10.014",
+        "mia_auc": "0.502\u00b10.037",
+        "forget_loss": "0.318\u00b10.045",
+        "expl_cos_to_oracle": "0.961\u00b10.005",
+        "pred_dist_to_oracle": "0.566\u00b10.032",
+        "wall_time_s": "8154.185\u00b11422.757",
+        "speedup_vs_oracle": "1.561\u00b10.319"
+      },
+      {
+        "config": "epu@30",
+        "macro_auc": "0.788\u00b10.004",
+        "micro_auc": "0.842\u00b10.006",
+        "mAP": "0.196\u00b10.003",
+        "macro_f1": "0.238\u00b10.007",
+        "precision": "0.163\u00b10.008",
+        "recall": "0.492\u00b10.029",
+        "mia_auc": "0.502\u00b10.037",
+        "forget_loss": "0.320\u00b10.047",
+        "expl_cos_to_oracle": "0.960\u00b10.006",
+        "pred_dist_to_oracle": "0.573\u00b10.029",
+        "wall_time_s": "8137.505\u00b11427.200",
+        "speedup_vs_oracle": "1.564\u00b10.319"
+      },
+      {
+        "config": "epu@100",
+        "macro_auc": "0.787\u00b10.005",
+        "micro_auc": "0.843\u00b10.005",
+        "mAP": "0.197\u00b10.001",
+        "macro_f1": "0.237\u00b10.008",
+        "precision": "0.163\u00b10.010",
+        "recall": "0.490\u00b10.021",
+        "mia_auc": "0.503\u00b10.037",
+        "forget_loss": "0.318\u00b10.042",
+        "expl_cos_to_oracle": "0.961\u00b10.006",
+        "pred_dist_to_oracle": "0.581\u00b10.035",
+        "wall_time_s": "8111.073\u00b11436.078",
+        "speedup_vs_oracle": "1.570\u00b10.324"
+      },
+      {
+        "config": "oracle",
+        "macro_auc": "0.802\u00b10.005",
+        "micro_auc": "0.841\u00b10.011",
+        "mAP": "0.204\u00b10.006",
+        "macro_f1": "0.226\u00b10.004",
+        "precision": "0.149\u00b10.002",
+        "recall": "0.529\u00b10.007",
+        "mia_auc": "0.499\u00b10.024",
+        "forget_loss": "0.350\u00b10.024",
+        "expl_cos_to_oracle": "1.000\u00b10.000",
+        "pred_dist_to_oracle": "0.000\u00b10.000",
+        "wall_time_s": "12585.423\u00b12733.726",
+        "speedup_vs_oracle": "1.000\u00b10.000"
+      }
+    ],
+    "ablation_lambda": [
+      {
+        "config": "epu@1",
+        "lambda": 1.0,
+        "expl_cos_to_oracle": "0.958\u00b10.005",
+        "preservation_gain_vs_plain": -0.0015,
+        "mia_auc": "0.502\u00b10.037",
+        "macro_auc": "0.789\u00b10.002"
+      },
+      {
+        "config": "epu@10",
+        "lambda": 10.0,
+        "expl_cos_to_oracle": "0.961\u00b10.005",
+        "preservation_gain_vs_plain": 0.0015,
+        "mia_auc": "0.502\u00b10.037",
+        "macro_auc": "0.787\u00b10.004"
+      },
+      {
+        "config": "epu@30",
+        "lambda": 30.0,
+        "expl_cos_to_oracle": "0.960\u00b10.006",
+        "preservation_gain_vs_plain": 0.0012,
+        "mia_auc": "0.502\u00b10.037",
+        "macro_auc": "0.788\u00b10.004"
+      },
+      {
+        "config": "epu@100",
+        "lambda": 100.0,
+        "expl_cos_to_oracle": "0.961\u00b10.006",
+        "preservation_gain_vs_plain": 0.0016,
+        "mia_auc": "0.503\u00b10.037",
+        "macro_auc": "0.787\u00b10.005"
+      }
+    ],
+    "tradeoff": [
+      {
+        "config": "original",
+        "forgetting_pred_dist_to_oracle": "0.326\u00b10.027",
+        "forgetting_mia_auc": "0.506\u00b10.029",
+        "explanation_cos_to_oracle": "0.961\u00b10.006"
+      },
+      {
+        "config": "finetune_retain",
+        "forgetting_pred_dist_to_oracle": "0.558\u00b10.045",
+        "forgetting_mia_auc": "0.503\u00b10.035",
+        "explanation_cos_to_oracle": "0.959\u00b10.009"
+      },
+      {
+        "config": "epu@1",
+        "forgetting_pred_dist_to_oracle": "0.552\u00b10.034",
+        "forgetting_mia_auc": "0.502\u00b10.037",
+        "explanation_cos_to_oracle": "0.958\u00b10.005"
+      },
+      {
+        "config": "epu@10",
+        "forgetting_pred_dist_to_oracle": "0.566\u00b10.032",
+        "forgetting_mia_auc": "0.502\u00b10.037",
+        "explanation_cos_to_oracle": "0.961\u00b10.005"
+      },
+      {
+        "config": "epu@30",
+        "forgetting_pred_dist_to_oracle": "0.573\u00b10.029",
+        "forgetting_mia_auc": "0.502\u00b10.037",
+        "explanation_cos_to_oracle": "0.960\u00b10.006"
+      },
+      {
+        "config": "epu@100",
+        "forgetting_pred_dist_to_oracle": "0.581\u00b10.035",
+        "forgetting_mia_auc": "0.503\u00b10.037",
+        "explanation_cos_to_oracle": "0.961\u00b10.006"
+      },
+      {
+        "config": "oracle",
+        "forgetting_pred_dist_to_oracle": "0.000\u00b10.000",
+        "forgetting_mia_auc": "0.499\u00b10.024",
+        "explanation_cos_to_oracle": "1.000\u00b10.000"
+      }
+    ],
+    "oracle_comparison": [
+      {
+        "config": "original",
+        "pred_dist_to_oracle": "0.326\u00b10.027",
+        "expl_cos_to_oracle": "0.961\u00b10.006",
+        "expl_iou_to_oracle": "0.532\u00b10.033"
+      },
+      {
+        "config": "finetune_retain",
+        "pred_dist_to_oracle": "0.558\u00b10.045",
+        "expl_cos_to_oracle": "0.959\u00b10.009",
+        "expl_iou_to_oracle": "0.503\u00b10.042"
+      },
+      {
+        "config": "epu@1",
+        "pred_dist_to_oracle": "0.552\u00b10.034",
+        "expl_cos_to_oracle": "0.958\u00b10.005",
+        "expl_iou_to_oracle": "0.512\u00b10.017"
+      },
+      {
+        "config": "epu@10",
+        "pred_dist_to_oracle": "0.566\u00b10.032",
+        "expl_cos_to_oracle": "0.961\u00b10.005",
+        "expl_iou_to_oracle": "0.524\u00b10.020"
+      },
+      {
+        "config": "epu@30",
+        "pred_dist_to_oracle": "0.573\u00b10.029",
+        "expl_cos_to_oracle": "0.960\u00b10.006",
+        "expl_iou_to_oracle": "0.528\u00b10.021"
+      },
+      {
+        "config": "epu@100",
+        "pred_dist_to_oracle": "0.581\u00b10.035",
+        "expl_cos_to_oracle": "0.961\u00b10.006",
+        "expl_iou_to_oracle": "0.533\u00b10.016"
+      }
+    ]
+  },
+  "findings": {
+    "metric": "explanation cosine similarity to oracle (higher = closer)",
+    "plain_unlearning_cos_to_oracle": 0.959,
+    "best_epu_config": "epu@100",
+    "best_epu_cos_to_oracle": 0.9606,
+    "any_epu_beats_plain_on_explanation": true,
+    "statement": "Best EPU (epu@100) > plain unlearning on explanation closeness to oracle. Reported as measured; not tuned to favor EPU."
+  }
+}

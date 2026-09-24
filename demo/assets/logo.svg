@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Federated network: a central server with four clients, one of them
+       hollow — the client being forgotten. Reads as a cluster at 16px. -->
+  <rect width="64" height="64" fill="#2563eb"/>
+  <g stroke="#ffffff" stroke-width="3.4" stroke-linecap="round">
+    <line x1="32" y1="32" x2="32" y2="15"/>
+    <line x1="32" y1="32" x2="49" y2="32"/>
+    <line x1="32" y1="32" x2="32" y2="49"/>
+  </g>
+  <!-- the forgotten client: link already severed, node fading out -->
+  <line x1="32" y1="32" x2="15" y2="32" stroke="#ffffff" stroke-width="3.4"
+        stroke-linecap="round" opacity="0.28"/>
+  <!-- retained clients -->
+  <circle cx="32" cy="13" r="6" fill="#ffffff"/>
+  <circle cx="51" cy="32" r="6" fill="#ffffff"/>
+  <circle cx="32" cy="51" r="6" fill="#ffffff"/>
+  <circle cx="13" cy="32" r="6" fill="#ffffff" opacity="0.28"/>
+  <!-- global model -->
+  <circle cx="32" cy="32" r="8.4" fill="#ffffff"/>
+  <circle cx="32" cy="32" r="3.6" fill="#2563eb"/>
+</svg>
