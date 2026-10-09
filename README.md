@@ -11,7 +11,6 @@
   <img alt="python" src="https://img.shields.io/badge/python-3.9%2B-blue">
   <img alt="model" src="https://img.shields.io/badge/backbone-DeiT--Small%20%2F%20ViT-orange">
   <img alt="dataset" src="https://img.shields.io/badge/dataset-NIH%20ChestX--ray14-lightgrey">
-  <img alt="license" src="https://img.shields.io/badge/visibility-private%20%7C%20patent--pending-red">
 </p>
 
 ---
@@ -46,7 +45,6 @@ the scan is not trustworthy, no matter how clean its numbers are.
 - [Running the pipeline](#running-the-pipeline)
 - [Interactive demo](#interactive-demo)
 - [Reproducibility](#reproducibility)
-- [Confidentiality & usage](#confidentiality--usage)
 
 ## Why this matters
 
@@ -215,12 +213,3 @@ Evaluation is fully separated from training
 own chain independently, and results are aggregated (mean/std) into
 `evaluation_results.csv`, `multi_seed_summary.csv`, `evaluation_tables.csv`,
 and `ablation_lambda.csv`.
-
-## Confidentiality & usage
-
-This repository documents original, unpublished research that is intended
-for patent filing. It is kept **private** and is shared only with explicitly
-authorized collaborators. Please do not copy, redistribute, publish, or
-disclose any part of this repository — code, methods, results, or
-documents — without the author's written permission.
-
