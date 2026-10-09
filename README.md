@@ -14,11 +14,6 @@
   <img alt="license" src="https://img.shields.io/badge/visibility-private%20%7C%20patent--pending-red">
 </p>
 
-> **Confidential — Patent-Pending Research.** This repository is private and
-> contains unpublished methods and results. Do not fork, mirror, or share
-> outside collaborators explicitly approved by the author. See
-> [Confidentiality](#confidentiality--usage) below.
-
 ---
 
 ## Abstract
