@@ -1,0 +1,120 @@
+{
+ "labels": [
+  "Atelectasis",
+  "Cardiomegaly",
+  "Effusion",
+  "Infiltration",
+  "Mass",
+  "Nodule",
+  "Pneumonia",
+  "Pneumothorax",
+  "Consolidation",
+  "Edema",
+  "Emphysema",
+  "Fibrosis",
+  "Pleural_Thickening",
+  "Hernia"
+ ],
+ "clients": {
+  "0": {
+   "n_images": 28430,
+   "n_patients": 9616,
+   "label_counts": [
+    3553,
+    372,
+    3081,
+    4290,
+    783,
+    964,
+    286,
+    1154,
+    1001,
+    393,
+    497,
+    351,
+    656,
+    27
+   ]
+  },
+  "1": {
+   "n_images": 4153,
+   "n_patients": 867,
+   "label_counts": [
+    346,
+    38,
+    752,
+    542,
+    449,
+    665,
+    72,
+    368,
+    193,
+    68,
+    149,
+    117,
+    192,
+    2
+   ]
+  },
+  "2": {
+   "n_images": 21072,
+   "n_patients": 6808,
+   "label_counts": [
+    2262,
+    691,
+    1605,
+    3767,
+    516,
+    745,
+    248,
+    896,
+    718,
+    388,
+    339,
+    280,
+    627,
+    58
+   ]
+  },
+  "3": {
+   "n_images": 8569,
+   "n_patients": 1675,
+   "label_counts": [
+    452,
+    59,
+    631,
+    1678,
+    1127,
+    1303,
+    158,
+    730,
+    363,
+    216,
+    230,
+    276,
+    440,
+    16
+   ]
+  },
+  "4": {
+   "n_images": 16056,
+   "n_patients": 2597,
+   "label_counts": [
+    1483,
+    862,
+    3557,
+    3720,
+    1178,
+    756,
+    258,
+    530,
+    1097,
+    522,
+    450,
+    161,
+    517,
+    42
+   ]
+  }
+ }
+}
