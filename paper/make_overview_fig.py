@@ -1,14 +1,8 @@
-"""Fig. 1 of the paper: functional block diagram of the study.
+"""Fig. 1 of the paper: block diagram of the study in three panels.
 
-One top-to-bottom layered diagram:
-
-  input data (three blocks)
-  dashed container "federated simulation"
-      central pipeline: federated training -> original model -> fine-tuning
-      helper blocks on the right: pretrained weights, frozen reference, explanation loss
-      layer "models compared":  Oracle | Plain | EPU
-      layer "evaluation":       utility | forgetting | explanation | efficiency
-  two bars underneath: seeds, hardware
+  (a) Original model    data, patient-level split, non-IID partition, FedAvg training
+  (b) Unlearning        the retrained Oracle, and the EPU local update at a remaining client
+  (c) Evaluation        models compared and the four groups of metrics
 
     python paper/make_overview_fig.py
 """
@@ -19,178 +13,157 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
+from matplotlib.patches import FancyArrowPatch, Rectangle
 
 OUT = Path(__file__).resolve().parent / "figures"
 plt.rcParams.update({
-    "font.family": "sans-serif",
-    "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
-    "mathtext.fontset": "stixsans",
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Times", "STIXGeneral", "DejaVu Serif"],
+    "mathtext.fontset": "stix",
     "savefig.dpi": 600,
 })
 
-INK, ARROW = "#000000", "#000000"
-# Black and white: every block is white with a black outline. The only shading is
-# light grey for the frozen (no-gradient) model and the run-condition bars.
-WHITE = ("#ffffff", "#000000")
-RED = GREEN = BLUE = ORANGE = PURPLE = WHITE
-FROZEN = ("#e2e2e2", "#000000")     # frozen reference model
-GREY = ("#ececec", "#000000")       # run conditions
-CONT = ("#ffffff", "#000000")       # container
-
-W = 716.0
-Y0, Y1 = -20.0, 440.0                # drawing units; 100 units = 1 inch
-FS_T, FS_S, FS_H = 7.6, 6.5, 7.2
+INK = "#000000"
+PANEL = "#9a9a9a"                    # thin outline of the three panels
+BLUE, BLUE_FILL = "#1f4e79", "#dce6f1"   # the explanation path of EPU
+GREY_FILL = "#e6e6e6"                # frozen model, forgotten client
+W, H = 2000.0, 1300.0                # drawing units; the figure is 7.16 in wide
+FS_P, FS_T, FS_S = 7.4, 6.7, 6.3     # panel title, block title, block text
+STEP = 26.5                          # line spacing inside a block
 
 
 def txt(ax, x, y, s, fs=FS_S, ha="center", va="center", **kw):
-    return ax.text(x, y, s, fontsize=fs, color=INK, ha=ha, va=va, zorder=6, **kw)
+    kw.setdefault("color", INK)
+    return ax.text(x, y, s, fontsize=fs, ha=ha, va=va, zorder=6, **kw)
 
 
-def block(ax, x, y, w, h, title, lines=(), c=GREEN, lw=0.9, step=12.8):
-    ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0,rounding_size=4.5",
-                                fc=c[0], ec=c[1], lw=lw, zorder=3))
-    rows = [(title, True)] + [(ln, False) for ln in lines]
-    y0 = y + h / 2 + step * (len(rows) - 1) / 2
-    for i, (s, bold) in enumerate(rows):
-        txt(ax, x + w / 2, y0 - i * step - 0.3, s, fs=FS_T if bold else FS_S,
+def rows(ax, x, y_top, items):
+    """Stack of text lines; items are (string, bold)."""
+    for i, (s, bold) in enumerate(items):
+        txt(ax, x, y_top + i * STEP, s, fs=FS_T if bold else FS_S,
             fontweight="bold" if bold else "normal")
 
 
-def seg(ax, xs, ys):
-    ax.plot(xs, ys, color=ARROW, lw=0.9, solid_capstyle="butt", solid_joinstyle="miter",
-            zorder=2)
+def box(ax, x0, y0, x1, y1, title=None, lines=(), fc="#ffffff", ec=INK, lw=0.7, cy=None):
+    """Rectangle with corners (x0, y0)-(x1, y1); a bold title and plain lines, centred."""
+    ax.add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, fc=fc, ec=ec, lw=lw, zorder=3))
+    items = ([(title, True)] if title else []) + [(s, False) for s in lines]
+    cy = (y0 + y1) / 2 if cy is None else cy
+    rows(ax, (x0 + x1) / 2, cy - STEP * (len(items) - 1) / 2, items)
 
 
-def head(ax, p0, p1):
-    ax.add_patch(FancyArrowPatch(p0, p1, arrowstyle="-|>,head_length=0.42,head_width=0.19",
-                                 mutation_scale=9, lw=0.9, color=ARROW, shrinkA=0, shrinkB=0,
-                                 zorder=2.5))
-
-
-def route(ax, pts):
-    xs, ys = zip(*pts)
-    seg(ax, xs[:-1], ys[:-1])
-    head(ax, pts[-2], pts[-1])
-
-
-def dashed(ax, xs, ys):
-    ax.plot(xs, ys, color=ARROW, lw=0.9, ls=(0, (3, 2)), zorder=2)
+def arrow(ax, pts, dashed=False, lw=0.7):
+    """Polyline through pts with an arrow head at the last point."""
+    ls = (0, (3.2, 2.2)) if dashed else "-"
+    if len(pts) > 2:
+        xs, ys = zip(*pts[:-1])
+        ax.plot(xs, ys, color=INK, lw=lw, ls=ls, zorder=4, solid_capstyle="butt",
+                solid_joinstyle="miter")
+    ax.add_patch(FancyArrowPatch(pts[-2], pts[-1], arrowstyle="-|>", mutation_scale=6.5,
+                                 color=INK, lw=lw, ls=ls, shrinkA=0, shrinkB=0, zorder=5))
 
 
 def main():
-    fig, ax = plt.subplots(figsize=(W / 100, 0.80 * (Y1 - Y0) / 100))   # compact rows
-    ax.set_xlim(0, W); ax.set_ylim(Y0, Y1); ax.axis("off")
-    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    fig = plt.figure(figsize=(7.16, 7.16 * H / W))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, W)
+    ax.set_ylim(H, 0)                 # y grows downwards, as on the page
+    ax.axis("off")
 
-    # ---------------------------------------------------------------- input data
-    txt(ax, W / 2, 433, "Input data", fs=FS_H)
-    iw, ig, iy, ih = 204.0, 28.0, 396.0, 30.0
-    ix = [24 + i * (iw + ig) for i in range(3)]
-    block(ax, ix[0], iy, iw, ih, "NIH ChestX-ray14", ["112,120 radiographs, 14 findings"], RED)
-    block(ax, ix[1], iy, iw, ih, "Patient-level split", ["70 / 15 / 15, patient-disjoint"], RED)
-    block(ax, ix[2], iy, iw, ih, "Non-IID client partition",
-          [r"Dirichlet ($\alpha$ = 0.5) over primary finding"], RED)
-    head(ax, (ix[0] + iw, iy + ih / 2), (ix[1], iy + ih / 2))
-    head(ax, (ix[1] + iw, iy + ih / 2), (ix[2], iy + ih / 2))
-
-    # ---------------------------------------------------------------- container
-    ax.add_patch(FancyBboxPatch((12, 16), 692, 364, boxstyle="round,pad=0,rounding_size=6",
-                                fc=CONT[0], ec=CONT[1], lw=0.9, ls=(0, (4, 3)), zorder=1))
-    txt(ax, 24, 370.5, "Federated simulation: FedAvg, DeiT-Small, $K$ = 5 clients", fs=FS_H,
+    # ------------------------------------------------------------------ panels
+    for x0, x1 in ((14, 391), (425, 1330), (1352, 1986)):
+        ax.add_patch(Rectangle((x0, 10), x1 - x0, 1233, fc="none", ec=PANEL, lw=0.6, zorder=1))
+    txt(ax, 30, 40, "(a) Original model", fs=FS_P, ha="left", fontweight="bold")
+    txt(ax, 441, 40, "(b) Unlearning after the erasure request of client $u$", fs=FS_P,
         ha="left", fontweight="bold")
+    txt(ax, 1368, 40, "(c) Evaluation", fs=FS_P, ha="left", fontweight="bold")
+    txt(ax, 1670, 68, "on the held-out test split", fs=FS_S, style="italic")
 
-    # ---------------------------------------------------------------- training
-    cx0, cw = 196.0, 262.0
-    cc = cx0 + cw / 2
-    rx0, rw = 506.0, 186.0
-    rc = rx0 + rw / 2
-    block(ax, cx0, 322, cw, 32, "Federated training",
-          ["2 local epochs, weighted BCE, warm-up + cosine LR"], GREEN)
-    block(ax, rx0, 322, rw, 32, "Pretrained DeiT-Small", ["ImageNet weights"], BLUE)
-    block(ax, cx0, 272, cw, 32, r"Original model  $\theta_o$",
-          ["best validation round (early stopping)"], GREEN)
-    block(ax, rx0, 272, rw, 32, r"Frozen reference  $\theta_o$",
-          [r"rollout map $\mathbf{M}_{\theta_o}(x)$, no gradient"], FROZEN)
-    px = ix[2] + iw / 2
-    route(ax, [(px, iy), (px, 388), (cc, 388), (cc, 354)])
-    head(ax, (rx0, 338), (cx0 + cw, 338))
-    head(ax, (cc, 322), (cc, 304))
-    head(ax, (cx0 + cw, 288), (rx0, 288))
+    # ------------------------------------------------------------------ (a)
+    box(ax, 33, 92, 372, 204, "NIH ChestX-ray14", ["112,120 radiographs", "14 findings"])
+    box(ax, 33, 254, 372, 366, "Patient-level split", ["70 / 15 / 15", "patient-disjoint"])
+    box(ax, 33, 416, 372, 606, "Non-IID partition", [r"Dirichlet $\alpha$ = 0.5, $K$ = 5"],
+        cy=509)
+    for i, (a, b) in enumerate(((48, 83), (93, 156), (166, 214), (224, 304), (314, 357))):
+        ax.add_patch(Rectangle((a, 548), b - a, 42, fc=GREY_FILL if i == 0 else "#ffffff",
+                               ec=INK, lw=0.6, zorder=4))
+    txt(ax, 65.5, 568, "$u$")
+    box(ax, 33, 656, 372, 869, "FedAvg training",
+        ["DeiT-Small, ImageNet init.", "2 local epochs, weighted BCE", "warm-up + cosine LR",
+         "early stopping on validation"])
+    box(ax, 33, 947, 372, 1059, r"Original model $\theta_o$", ["best validation round"], lw=1.3)
+    for y0, y1 in ((204, 254), (366, 416), (606, 656), (869, 947)):
+        arrow(ax, [(202, y0), (202, y1)])
+    arrow(ax, [(372, 511), (408, 511), (408, 179), (458, 179)])      # partition -> Oracle
+    arrow(ax, [(372, 1003), (458, 1003)], lw=1.0)                    # theta_o -> unlearning
+    ax.add_patch(Rectangle((398, 965), 30, 32, fc="#ffffff", ec="none", zorder=2))
+    txt(ax, 413, 982, r"$\theta_o$", fs=FS_T)
 
-    # ---------------------------------------------------------------- EPU local update
-    ux, uw = 56.0, 180.0                 # left column of the update
-    uc = ux + uw / 2
-    ax_, aw = 272.0, 186.0               # middle column
-    ac = ax_ + aw / 2
-    dx = 220.0
-    head(ax, (dx, 272), (dx, 250))
-    txt(ax, dx + 6, 261.5,
-        "erasure request from client $u$:  EPU local update at each remaining client",
-        ha="left", fs=6.4, style="italic")
-    block(ax, ux, 218, uw, 32, r"Trainable model  $\theta$",
-          [r"DeiT-Small, starts from $\theta_o$"], GREEN)
-    block(ax, ax_, 218, aw, 32, "Attention rollout",
-          [r"12 layers to one map $\mathbf{M}_{\theta}(x)$"], GREEN)
-    block(ax, rx0, 218, rw, 32, r"Explanation loss  $\mathcal{L}_{\mathrm{exp}}$",
-          [r"MSE of $\mathbf{M}_{\theta}(x)$ and $\mathbf{M}_{\theta_o}(x)$"], BLUE)
-    head(ax, (ux + uw, 234), (ax_, 234))
-    head(ax, (ax_ + aw, 234), (rx0, 234))
-    head(ax, (rc, 272), (rc, 250))
-    block(ax, ux, 166, uw, 32, r"Task loss  $\mathcal{L}_{\mathrm{task}}$",
-          [r"weighted BCE on logits $\hat{y}$"], GREEN)
-    block(ax, ax_, 166, aw, 32, "EPU objective",
-          [r"$\mathcal{L}_{\mathrm{task}}+\lambda\,\mathcal{L}_{\mathrm{exp}}$;  "
-           r"$D_u$ is never read"], GREEN)
-    head(ax, (uc, 218), (uc, 198))
-    head(ax, (ux + uw, 182), (ax_, 182))
-    route(ax, [(rc, 218), (rc, 182), (ax_ + aw, 182)])
-    txt(ax, rc + 5, 199, r"$\times\lambda$", ha="left", fs=7.0)
-    # backpropagation into the trainable model only
-    bx_ = 300.0
-    dashed(ax, [bx_, bx_, 46, 46], [166, 157, 157, 234])
-    head(ax, (46, 234), (ux, 234))
-    lab = txt(ax, 150, 157, r"backpropagation (updates $\theta$ only)", fs=6.2)
-    lab.set_bbox(dict(fc=CONT[0], ec="none", pad=1.2))
+    # ------------------------------------------------------------------ (b)
+    box(ax, 458, 114, 1297, 243, r"Oracle $\theta^*$",
+        ["retrained from the pretrained weights without client $u$,",
+         r"same FedAvg procedure (no use of $\theta_o$)"])
+    ax.add_patch(Rectangle((458, 316), 839, 889, fc="none", ec=BLUE, lw=1.2, zorder=2))
+    txt(ax, 481, 353, r"EPU: local update at each remaining client $k \neq u$", fs=FS_T,
+        ha="left", fontweight="bold", color=BLUE)
 
-    # ---------------------------------------------------------------- models compared
-    mw, mg, my, mh = 208.0, 22.0, 104.0, 34.0
-    mx = [24 + i * (mw + mg) for i in range(3)]
-    mc = [x + mw / 2 for x in mx]
-    txt(ax, 440, 157.5, "Models compared", fs=FS_H, ha="left")
-    block(ax, mx[0], my, mw, mh, r"Oracle  $\theta^{*}$", ["retrained without client $u$"],
-          ORANGE)
-    block(ax, mx[1], my, mw, mh, r"Plain  $\theta_u$", [r"fine-tuning with $\lambda$ = 0"],
-          ORANGE)
-    block(ax, mx[2], my, mw, mh, r"EPU  $\theta_u$  (proposed)",
-          [r"fine-tuning with $\lambda$ > 0"], ORANGE, lw=2.0)
-    head(ax, (mc[1], 166), (mc[1], my + mh))
-    route(ax, [(mc[1], 149), (mc[2], 149), (mc[2], my + mh)])
-    ox = 34.0
-    route(ax, [(cx0, 338), (ox, 338), (ox, my + mh)])
-    txt(ax, (ox + cx0) / 2, 344.5, "repeated without $u$", fs=6.4, style="italic")
+    box(ax, 480, 393, 587, 729, None, ["Batch", "$(x, y)$", "from", "$D_k$,", r"$k \neq u$"])
+    box(ax, 631, 393, 855, 511, r"Frozen $\theta_o$", ["(no gradient)"], fc=GREY_FILL)
+    box(ax, 893, 393, 1073, 511, None, ["Rollout map", r"$M_{\theta_o}(x)$"],
+        fc=BLUE_FILL, ec=BLUE)
+    box(ax, 631, 612, 855, 729, r"Trainable $\theta$", [r"(initialised at $\theta_o$)"])
+    box(ax, 893, 612, 1073, 729, None, ["Rollout map", r"$M_{\theta}(x)$"],
+        fc=BLUE_FILL, ec=BLUE)
+    ax.add_patch(Rectangle((1106, 393), 168, 336, fc=BLUE_FILL, ec=BLUE, lw=0.7, zorder=3))
+    rows(ax, 1190, 508, [("Explanation", True), ("loss", True),
+                         (r"$\mathcal{L}_{exp}$ =", False), ("MSE of the", False),
+                         ("two maps", False)])
+    box(ax, 631, 819, 855, 936, "Task loss", ["weighted BCE", "on logits"])
+    box(ax, 893, 819, 1274, 936, "EPU objective",
+        [r"$\mathcal{L}_{EPU} = \mathcal{L}_{task} + \lambda\,\mathcal{L}_{exp}$",
+         "$D_u$ is never read"])
+    box(ax, 631, 1059, 1274, 1154, r"Server: FedAvg, $T_u$ rounds $\rightarrow$ $\theta_u$",
+        [r"over the remaining clients; Plain uses $\lambda$ = 0"])
 
-    # ---------------------------------------------------------------- evaluation
-    ew, eg, ey, eh = 155.0, 16.0, 24.0, 46.0
-    ex = [24 + i * (ew + eg) for i in range(4)]
-    ec = [x + ew / 2 for x in ex]
-    bus = 95.0
-    for c in mc:
-        seg(ax, [c, c], [my, bus])
-    seg(ax, [ec[0], ec[3]], [bus, bus])
-    for c in ec:
-        head(ax, (c, bus), (c, ey + eh))
-    txt(ax, (ec[1] + ec[2]) / 2, 83.5, "Evaluation, held-out test split", fs=FS_H)
-    for i, (t, ls2) in enumerate([
-            ("Utility", ["AUROC, mAP,", "F1, precision, recall"]),
-            ("Forgetting", ["MIA AUC, forget loss,", "distance to oracle"]),
-            ("Explanation", ["cosine, Pearson, IoU, MSE", r"to $\theta_o$ and to $\theta^{*}$"]),
-            ("Efficiency", ["wall-clock time,", "speed-up vs. oracle"])]):
-        block(ax, ex[i], ey, ew, eh, t, ls2, PURPLE, step=12.4)
+    arrow(ax, [(587, 452), (631, 452)])               # batch -> frozen model
+    arrow(ax, [(587, 670), (631, 670)])               # batch -> trainable model
+    arrow(ax, [(855, 452), (893, 452)])
+    arrow(ax, [(1073, 452), (1106, 452)])
+    arrow(ax, [(855, 670), (893, 670)])
+    arrow(ax, [(1073, 670), (1106, 670)])
+    arrow(ax, [(743, 729), (743, 819)])               # logits -> task loss
+    arrow(ax, [(855, 877), (893, 877)])               # task loss -> objective
+    arrow(ax, [(1190, 729), (1190, 819)])             # explanation loss -> objective
+    txt(ax, 1232, 772, r"$\times\lambda$", fs=FS_T)
+    arrow(ax, [(950, 936), (950, 975), (606, 975), (606, 710), (631, 710)], dashed=True)
+    txt(ax, 777, 997, r"backprop, $\theta$ only", style="italic")
+    arrow(ax, [(1173, 936), (1173, 1059)])            # local model returned to the server
+    txt(ax, 1097, 997, r"return $\theta_k$, $n_k$", style="italic")
 
-    # ---------------------------------------------------------------- run conditions
-    block(ax, 12, -15, 338, 24, "Three seeds: split, partition and training repeated", (), GREY)
-    block(ax, 366, -15, 338, 24, "One NVIDIA Tesla T4; PyTorch and timm", (), GREY)
+    arrow(ax, [(1297, 179), (1380, 179)])             # Oracle -> evaluation
+    arrow(ax, [(1274, 1106), (1380, 1106)])           # unlearned model -> evaluation
+    for y in (152, 1083):
+        ax.add_patch(Rectangle((1322, y - 16), 32, 30, fc="#ffffff", ec="none", zorder=2))
+    txt(ax, 1338, 152, r"$\theta^*$", fs=FS_T)
+    txt(ax, 1338, 1083, r"$\theta_u$", fs=FS_T)
+
+    # ------------------------------------------------------------------ (c)
+    box(ax, 1380, 126, 1581, 1154)
+    rows(ax, 1480.5, 559, [("Models", True), ("compared", True), ("", False),
+                           (r"Original $\theta_o$", False), (r"Oracle $\theta^*$", False),
+                           (r"Plain ($\lambda$ = 0)", False), (r"EPU ($\lambda$ > 0)", False)])
+    ax.add_patch(Rectangle((1637, 126), 333, 1028, fc="none", ec=PANEL, lw=0.6, zorder=1))
+    arrow(ax, [(1581, 640), (1637, 640)])
+    box(ax, 1654, 159, 1953, 377, "Utility", ["macro-AUROC, mAP,", "precision, recall, F1"])
+    box(ax, 1654, 405, 1953, 623, "Forgetting",
+        ["membership-inference", "AUC, forget loss,", "distance to oracle"])
+    box(ax, 1654, 651, 1953, 869, "Explanation",
+        ["cosine, Pearson,", r"MSE, IoU vs. $\theta_o$", r"(stability) and $\theta^*$",
+         "(oracle fidelity)"])
+    box(ax, 1654, 897, 1953, 1114, "Efficiency", ["wall-clock time,", "speed-up vs. oracle"])
+
+    txt(ax, 1000, 1274, "Three seeds (42, 43, 44): data split, client partition and training are "
+        "repeated for every seed.   Single NVIDIA Tesla T4; PyTorch and timm.", style="italic")
 
     fig.savefig(OUT / "fig_overview.png")
     plt.close(fig)
