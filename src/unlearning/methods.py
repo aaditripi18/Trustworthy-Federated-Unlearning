@@ -65,3 +65,4 @@ def finetune_retain(cfg: dict, forget_client: int, original_params,
 # Import method modules so their @register decorators run (keep at bottom to
 # avoid a circular import at definition time).
 from . import epu  # noqa: E402,F401  (registers "epu")
+from . import pga  # noqa: E402,F401  (registers "pga")

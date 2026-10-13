@@ -62,7 +62,7 @@ preserve, rather than a side effect to ignore.
 ## Method
 
 <p align="center">
-  <img src="report/architecture.png" alt="System architecture" width="720"/>
+  <img src="paper/figures/fig_overview.png" alt="Block diagram: original model, unlearning with EPU, evaluation" width="860"/>
 </p>
 
 1. **Federated training** — FedAvg across non-IID, patient-disjoint clients
@@ -95,34 +95,56 @@ preserve, rather than a side effect to ignore.
 
 ## Measured results
 
-Final run — DeiT-Small@224, NIH ChestX-ray14, 5 clients (Dirichlet α = 0.5),
-3 seeds (42/43/44), mean ± std. Full tables:
-[`final_results.csv`](ec2_final_run/tfu/experiments/full_experiment/final_results.csv) ·
-[`final_summary.json`](ec2_final_run/tfu/experiments/full_experiment/final_summary.json).
+DeiT-Small@224, NIH ChestX-ray14, 5 clients (Dirichlet α = 0.5), client 0 forgotten,
+3 seeds (42/43/44), mean ± sample s.d. on the held-out test split. Two fine-tuning
+settings were run: **A** (2 rounds, step 2e-5) and **B** (5 rounds, step 1e-4).
 
-| Config | Macro AUC | MIA AUC (→0.5 = forgotten) | Explanation cosine-sim to oracle | Speedup vs. oracle |
+| Model | Macro-AUROC | IoU of rollout maps with the Original | Membership-audit AUC | Speed-up vs. oracle |
 |---|:---:|:---:|:---:|:---:|
-| Original (pre-unlearning) | 0.805 ± 0.007 | 0.506 ± 0.029 | 0.961 ± 0.006 | 0.74× |
-| Retrain oracle (gold standard) | 0.802 ± 0.005 | 0.499 ± 0.024 | 1.000 ± 0.000 | 1.00× |
-| Plain unlearning (`finetune_retain`) | 0.806 ± 0.003 | 0.505 ± 0.034 | 0.964 ± 0.008 | **5.18×** |
-| EPU (λ = 0.5) | 0.806 ± 0.004 | 0.505 ± 0.034 | 0.962 ± 0.007 | 3.91× |
-| EPU (λ = 1.0) | 0.806 ± 0.003 | 0.505 ± 0.033 | 0.961 ± 0.006 | 3.91× |
+| Original (before unlearning) | 0.805 ± 0.007 | 1 | 0.605 ± 0.042 | – |
+| Oracle (retrained without client 0) | 0.802 ± 0.005 | 0.532 ± 0.033 | reference | 1× |
+| **Setting A** | | | | |
+| Plain fine-tuning | 0.806 ± 0.003 | 0.701 ± 0.017 | 0.570 ± 0.062 | 5.2× |
+| EPU, λ = 0.5 | 0.806 ± 0.004 | 0.798 ± 0.012 | 0.553 ± 0.084 | 3.9× |
+| EPU, λ = 1 | 0.806 ± 0.003 | **0.820 ± 0.011** | 0.555 ± 0.075 | 3.9× |
+| **Setting B** | | | | |
+| Plain fine-tuning | 0.789 ± 0.002 | 0.603 ± 0.042 | 0.539 ± 0.065 | 1.9× |
+| EPU, λ = 1 | 0.789 ± 0.002 | 0.736 ± 0.024 | 0.546 ± 0.043 | 1.6× |
+| EPU, λ = 10 | 0.787 ± 0.004 | 0.798 ± 0.024 | 0.535 ± 0.066 | 1.6× |
+| EPU, λ = 30 | 0.788 ± 0.004 | 0.840 ± 0.025 | 0.531 ± 0.080 | 1.6× |
+| EPU, λ = 100 | 0.787 ± 0.005 | **0.871 ± 0.019** | 0.549 ± 0.061 | 1.6× |
+| **Gradient-ascent baseline (repair as in setting A)** | | | | |
+| Ascent only | 0.766 ± 0.015 | 0.559 ± 0.130 | 0.439 ± 0.070 | – |
+| GA (ascent + plain repair) | 0.806 ± 0.004 | 0.709 ± 0.038 | 0.547 ± 0.071 | – |
+| GA + EPU, λ = 1 | 0.807 ± 0.003 | **0.817 ± 0.015** | 0.572 ± 0.073 | – |
 
-<p align="center">
-  <img src="ec2_final_run/tfu/experiments/full_experiment/figures/fig_oracle_comparison.png" width="410"/>
-  <img src="ec2_final_run/tfu/experiments/full_experiment/figures/fig_tradeoff.png" width="410"/>
-</p>
+The membership audit is the positive-finding attack calibrated by the Oracle's loss
+(0.5 = chance), computed on the saved checkpoints; the plain loss-threshold attack is at
+chance for every model, the Original included.
 
-Both unlearning methods successfully drive the membership-inference AUC to
-chance level (≈0.5, meaning the forgotten client is no longer identifiable)
-while gaining 4–5× wall-clock speedup over full retraining. Results are
-reported **as measured, not tuned to favor EPU**: on this run, plain
-unlearning is at least as explanation-stable as EPU, a finding the evaluation
-framework surfaces automatically rather than hiding (see the `findings` block
-in `final_summary.json` and the λ-ablation in
-[`final_ablation.csv`](ec2_final_run/tfu/experiments/full_experiment/final_ablation.csv)).
-That honesty is deliberate: the framework is built to report what happens,
-not what would look best.
+What the results show, stated as measured:
+
+- **Explanation stability.** Fine-tuning moves the attention-rollout maps even where
+  accuracy does not change. EPU keeps them closer to the pre-unlearning model in every
+  seed and setting, at no cost in macro-AUROC relative to plain fine-tuning.
+- **Not oracle fidelity.** EPU does not bring the maps reliably closer to those of the
+  retrained Oracle; the Oracle's own maps differ from the Original's. The two notions are
+  reported separately.
+- **Forgetting.** The calibrated audit finds a weak trace of the forgotten client in the
+  Original model. Fine-tuning lowers it without removing it, to the same extent with and
+  without EPU. After gradient ascent, EPU retains slightly more of that trace than plain
+  repair (0.572 against 0.547).
+- **Utility.** Setting A keeps macro-AUROC; setting B loses about 1.7 points for Plain and
+  EPU alike.
+- **Limits.** One dataset, one backbone, five clients, one forgotten client, three seeds.
+
+Result files:
+[setting A](ec2_final_run/tfu/experiments/full_experiment/final_results.csv) ·
+[setting B](ec2_final_run/tfu/experiments/exp_a1/final_results.csv) ·
+[setting A stability](paper/setting_a_stability.csv) ·
+[membership audit](paper/forgetting_attacks.csv) ·
+[gradient-ascent baseline](paper/ga_results.csv).
+`python paper/verify_numbers.py` checks the quoted numbers against these files.
 
 ## Repository structure
 
@@ -134,10 +156,12 @@ Trustworthy-Federated-Unlearning/
 │   ├── data/                  # synthetic + NIH loaders, patient-disjoint partitioning
 │   ├── models/vit.py          # ViT / DeiT model factory
 │   ├── federated/              # FedAvg client, server, strategy, history
-│   ├── unlearning/             # oracle, method registry (finetune_retain, EPU), verification
+│   ├── unlearning/             # oracle, method registry (finetune_retain, EPU, gradient ascent), verification
 │   ├── explain/                # attention rollout (numpy + differentiable torch) + metrics
 │   └── eval/                   # metrics, experiment runner, multi-seed/λ aggregation, figures
-├── scripts/                   # one script per milestone (smoke_test.py … run_final.py)
+├── scripts/                   # one script per milestone (smoke_test.py … run_final.py),
+│                               #   run_ga.py (gradient-ascent baseline), run_seed.py (staged extra seeds)
+├── paper/                     # figure scripts, derived results and number checks behind the paper
 ├── tests/                     # unit + integration tests, one suite per milestone
 ├── docs/DATASET_NIH.md        # NIH ChestX-ray14 download & preparation guide
 ├── demo/                      # Streamlit dashboard — diagnosis, before/after, results
@@ -183,6 +207,7 @@ python scripts/run_explain.py      # M5 -> "M5 EXPLAIN OK"            (uses M3/M
 python scripts/run_epu.py          # M6 -> "M6 EPU OK"                (4-way comparison)
 python scripts/run_evaluation.py   # M7 -> "M7 EVAL OK"               (multi-seed x multi-λ)
 python scripts/run_final.py        # M8 -> full NIH run + tables + figures
+python scripts/run_ga.py           # gradient-ascent baseline (reuses the Original/Oracle checkpoints)
 pytest                              # all milestones
 ```
 
