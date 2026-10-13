@@ -28,3 +28,6 @@ ec2_final_run/
 .venv/
 __pycache__/
 .pytest_cache/
+
+# bundle uploaded to Kaggle (code + checkpoints); regenerate, do not track
+kaggle_upload/

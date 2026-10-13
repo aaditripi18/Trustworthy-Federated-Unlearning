@@ -1,0 +1,21 @@
+# Gradient-ascent client-unlearning baseline (second baseline of the paper).
+# Loaded by scripts/run_ga.py on top of the NIH configs. Original and Oracle are
+# NOT retrained: their checkpoints are reused from `reuse`.
+
+ga:
+  out_dir: experiments/ga_baseline
+  reuse: experiments/full_experiment      # holds seed_<s>/original.pt and oracle.pt
+  seeds: [42, 43, 44]
+
+  # --- stage 1: projected gradient ascent on the forgotten client's data ---
+  ascent_radius: 0.005        # L2-ball radius as a fraction of ||theta_o|| (set on validation data, seed 42)
+  ascent_steps_to_radius: 12  # step size = radius / this, with gradient norm clipped to 1
+  ascent_max_batches: 24      # batches of 32 from the forgotten client
+  ascent_epochs: 1
+  ascent_grad_clip: 1.0
+
+  # --- stage 2: repair on the remaining clients, same regimes as the paper ---
+  settings:
+    A: {finetune_rounds: 2, finetune_lr: 0.00002, epu_lambda: 1}
+    B: {finetune_rounds: 5, finetune_lr: 0.0001, epu_lambda: 100}
+  run_settings: [A]           # add B for the stronger regime (about 4 more GPU-hours per seed)

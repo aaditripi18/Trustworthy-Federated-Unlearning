@@ -39,7 +39,7 @@ def config_label(method: str, lam) -> str:
 # ---------------------------------------------------------------- torch part
 
 def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
-               ckpt_dir=None, reuse_ckpt_dir=None) -> list[dict]:
+               ckpt_dir=None, reuse_ckpt_dir=None, extra=None, standard=True) -> list[dict]:
     """Run the full chain for one seed and return one result dict per model.
 
     ckpt_dir : optional directory for per-seed model checkpoints. When set, each
@@ -48,6 +48,13 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
                state_dicts and serialize them; they consume no RNG and mutate
                nothing, so training, evaluation, and all outputs are unchanged.
                No-op when None.
+    extra    : optional list of additional unlearning runs, each a dict
+               {"label", "method", "rounds", "lambda"} (e.g. the gradient-ascent
+               baseline "pga"). They are evaluated with exactly the same code as
+               Plain / EPU and reported under config == label.
+    standard : when False, Plain and EPU are not re-run (their results already
+               exist); only Original, Oracle and the ``extra`` runs are evaluated.
+               Default True leaves the original behaviour unchanged.
     """
     import torch  # noqa: F401
 
@@ -131,7 +138,7 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
         return cb, st
 
     # Progress/ETA logging: count model builds up front for "[i/total]" + ETA.
-    total_stages = 3 + len(lambdas)
+    total_stages = 2 + ((1 + len(lambdas)) if standard else 0) + len(extra or [])
     seed_t0 = time.perf_counter()
     _done = 0
 
@@ -217,24 +224,41 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
         _save_ckpt(oracle["model"], "oracle.pt")            # == the evaluated Oracle
     _tick("oracle")
 
-    # --- Plain: warm-start finetune (final model = operating point) ---
-    plain_cb, plain_st = make_cb("finetune_retain", ft_rounds, track_best=False)
-    plain = get_method("finetune_retain")(cfg, forget, orig_params, logger=logger, dm=dm,
-                                          pos_weight=pos_weight, lr_schedule=ft_sched,
-                                          on_round_end=plain_cb)
-    _save_ckpt(plain["model"], "plain.pt")                  # == the evaluated Plain
-    _tick("finetune_retain")
+    plain, plain_st, epus, epu_sts = None, None, {}, {}
+    if standard:
+        # --- Plain: warm-start finetune (final model = operating point) ---
+        plain_cb, plain_st = make_cb("finetune_retain", ft_rounds, track_best=False)
+        plain = get_method("finetune_retain")(cfg, forget, orig_params, logger=logger, dm=dm,
+                                              pos_weight=pos_weight, lr_schedule=ft_sched,
+                                              on_round_end=plain_cb)
+        _save_ckpt(plain["model"], "plain.pt")                  # == the evaluated Plain
+        _tick("finetune_retain")
 
-    # --- EPU per lambda: identical to Plain except the explanation loss ---
-    epus, epu_sts = {}, {}
-    for lam in lambdas:
-        cfg["unlearn"]["explanation_lambda"] = lam
-        epu_cb, epu_sts[lam] = make_cb(f"epu@{lam:g}", ft_rounds, track_best=False)
-        epus[lam] = get_method("epu")(cfg, forget, orig_params, logger=logger, dm=dm,
-                                      pos_weight=pos_weight, lr_schedule=ft_sched,
-                                      on_round_end=epu_cb)
-        _save_ckpt(epus[lam]["model"], f"epu_lambda{lam}.pt")  # == the evaluated EPU@lam
-        _tick(f"epu@{lam:g}")
+        # --- EPU per lambda: identical to Plain except the explanation loss ---
+        epus, epu_sts = {}, {}
+        for lam in lambdas:
+            cfg["unlearn"]["explanation_lambda"] = lam
+            epu_cb, epu_sts[lam] = make_cb(f"epu@{lam:g}", ft_rounds, track_best=False)
+            epus[lam] = get_method("epu")(cfg, forget, orig_params, logger=logger, dm=dm,
+                                          pos_weight=pos_weight, lr_schedule=ft_sched,
+                                          on_round_end=epu_cb)
+            _save_ckpt(epus[lam]["model"], f"epu_lambda{lam}.pt")  # == the evaluated EPU@lam
+            _tick(f"epu@{lam:g}")
+
+    # --- additional unlearning baselines (same evaluation path as Plain / EPU) ---
+    extras = []
+    for spec in (extra or []):
+        saved = (cfg["unlearn"].get("explanation_lambda"), cfg["unlearn"].get("finetune_rounds"))
+        cfg["unlearn"]["explanation_lambda"] = spec.get("lambda", 0.0)
+        cfg["unlearn"]["finetune_rounds"] = spec["rounds"]
+        x_cb, x_st = make_cb(spec["label"], spec["rounds"], track_best=False)
+        x_out = get_method(spec["method"])(cfg, forget, orig_params, logger=logger, dm=dm,
+                                           pos_weight=pos_weight, lr_schedule=ft_sched,
+                                           on_round_end=x_cb)
+        cfg["unlearn"]["explanation_lambda"], cfg["unlearn"]["finetune_rounds"] = saved
+        _save_ckpt(x_out["model"], f"{spec['label']}.pt")
+        extras.append((spec, x_out, x_st))
+        _tick(spec["label"])
 
     grid = model_grid(base["model"], cfg["data"]["image_size"], cfg["model"]["patch_size"])
     def maps_of(m):
@@ -287,14 +311,20 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
         row["speedup_vs_oracle"] = float(oracle["wall_time_s"] / wall_time) if wall_time > 0 else None
         return row
 
-    results = [
-        evaluate(base["model"], "original", None, base_t, base_rounds),
-        evaluate(plain["model"], "finetune_retain", None, plain["wall_time_s"], plain_st["rounds_run"]),
-        evaluate(oracle["model"], "oracle", None, oracle["wall_time_s"], oracle_rounds),
-    ]
-    for lam in lambdas:
-        results.append(evaluate(epus[lam]["model"], "epu", lam, epus[lam]["wall_time_s"],
-                                epu_sts[lam]["rounds_run"]))
+    results = [evaluate(base["model"], "original", None, base_t, base_rounds)]
+    if standard:
+        results.append(evaluate(plain["model"], "finetune_retain", None, plain["wall_time_s"],
+                                plain_st["rounds_run"]))
+    results.append(evaluate(oracle["model"], "oracle", None, oracle["wall_time_s"], oracle_rounds))
+    if standard:
+        for lam in lambdas:
+            results.append(evaluate(epus[lam]["model"], "epu", lam, epus[lam]["wall_time_s"],
+                                    epu_sts[lam]["rounds_run"]))
+    for spec, x_out, x_st in extras:
+        row = evaluate(x_out["model"], spec["method"], spec.get("lambda", 0.0),
+                       x_out["wall_time_s"], x_st["rounds_run"])
+        row["config"] = spec["label"]
+        results.append(row)
     return results
 
 
