@@ -38,6 +38,9 @@ _FAVICON = ASSETS / "favicon.png"
 # rather than in experiments/*/figures so the training run's own output stays
 # exactly as the job wrote it.
 PRES_FIGS = ASSETS / "figures"
+# Derived results behind the paper: setting-A stability, membership audit,
+# gradient-ascent baseline, and the block diagram.
+PAPER = REPO_ROOT / "paper"
 
 PROJECT_TITLE = ("Attention-Fidelity-Preserving Federated Unlearning with "
                  "Vision Transformers for Chest X-Rays")
@@ -522,6 +525,31 @@ def paired_gain(exp_dir: str, metric: str, base_cfg: str = "finetune_retain"):
 
 
 @st.cache_data(show_spinner=False)
+def paper_table(name: str, keys: tuple = ("config",)):
+    """mean and std over seeds of every numeric column of a derived result file in
+    paper/ (setting-A stability, membership audit, gradient-ascent baseline),
+    grouped by `keys` — read from the CSV, never hand-typed."""
+    import pandas as pd
+    fp = PAPER / name
+    if not fp.exists():
+        return {}
+    df = pd.read_csv(fp)
+    num = [c for c in df.columns
+           if c not in keys and c != "seed" and pd.api.types.is_numeric_dtype(df[c])]
+    out = {}
+    for k, g in df.groupby(list(keys)):
+        k = k if isinstance(k, tuple) else (k,)
+        out[k if len(keys) > 1 else k[0]] = {
+            c: (float(g[c].mean()), float(g[c].std(ddof=1)) if len(g) > 1 else 0.0)
+            for c in num}
+    return out
+
+
+def pm(v, d: int = 3) -> str:
+    return f"{v[0]:.{d}f} ± {v[1]:.{d}f}"
+
+
+@st.cache_data(show_spinner=False)
 def cooccurrence(csv_path: str):
     """How often each pair of findings appears together in the label file.
     Used to show that the model's extra flags are radiologically plausible
@@ -903,6 +931,10 @@ page = st.session_state.page
 gt_map = load_groundtruth(str(DEFAULT_CSV))
 sum_main = load_summary(str(FULL_EXP))
 sum_sweep = load_summary(str(SWEEP_EXP))
+stab_a = paper_table("setting_a_stability.csv")
+audit = paper_table("forgetting_attacks.csv", ("setting", "config"))
+ga_res = paper_table("ga_results.csv")
+HAVE_PAPER = bool(stab_a and audit and ga_res)
 sel_summary = load_summary(str(sel_exp))
 sel_seed_dir = sel_exp / seed_choice
 orig_ckpt = FULL_EXP / seed_choice / "original.pt"     # canonical home of orig/oracle
@@ -950,8 +982,8 @@ if page == "Home":
             "Five simulated hospitals jointly train a Vision Transformer to read "
             "chest X-rays — without sharing a single image. When one hospital "
             "exercises its right to be forgotten, we remove its influence "
-            "<b>without a full retrain</b>, verify the forgetting with a "
-            "membership-inference attack, and — the part accuracy alone cannot "
+            "<b>without a full retrain</b>, audit the forgetting with "
+            "membership-inference attacks, and — the part accuracy alone cannot "
             "see — keep the model's <b>visual evidence</b> anchored where it was. "
             "Every number on this site is a real measurement from the trained "
             "models you can run in the live workspaces.")
@@ -971,11 +1003,17 @@ if page == "Home":
             kpi_row([
                 ("Diagnostic quality", f"{mean_of(r['original']['macro_auc']):.3f}",
                  "macro-AUROC of the federated model (0.5 = chance)"),
-                ("Forgetting verified", f"{mean_of(r['finetune_retain']['mia_auc']):.2f}",
-                 "membership-inference AUC ≈ coin-flip"),
+                ("Membership trace",
+                 (f"{audit[('-', 'original')]['positive_auc'][0]:.3f} → "
+                  f"{audit[('A', 'finetune_retain')]['positive_auc'][0]:.3f}")
+                 if HAVE_PAPER else "—",
+                 "calibrated audit AUC, Original → after unlearning "
+                 "(0.5 = chance): reduced, not removed"),
                 ("Explanation preserved",
-                 f"{mean_of(r['finetune_retain']['expl_cos_to_oracle']):.3f}",
-                 "attention cosine to the gold-standard oracle"),
+                 (f"{stab_a['finetune_retain']['expl_iou_to_original'][0]:.2f} → "
+                  f"{stab_a['epu@1']['expl_iou_to_original'][0]:.2f}")
+                 if HAVE_PAPER else "—",
+                 "overlap of attention maps with the Original, Plain → EPU"),
                 ("Cost of unlearning",
                  f"{mean_of(r['finetune_retain']['speedup_vs_oracle']):.1f}× faster",
                  "than retraining from scratch"),
@@ -986,7 +1024,7 @@ if page == "Home":
         # learning that already existed before this work.
         pipeline = flow([
             ("stage 01", "5 clients<br>non-IID shards", False),
-            ("stage 02", "FedAvg<br>30 rounds", False),
+            ("stage 02", "FedAvg<br>up to 30 rounds", False),
             ("stage 03", "Original<br>model", False),
             ("stage 04", "Unlearn<br>client 0", True),
             ("stage 05", "Evaluate<br>4 axes", True),
@@ -996,20 +1034,30 @@ if page == "Home":
               "How the five stages connect",
               ["Five clients hold patient-disjoint, non-IID shards of "
                "ChestX-ray14. Images never leave the client.",
-               "FedAvg runs 30 rounds: local training, then a data-weighted "
-               "average of the returned weights.",
+               "FedAvg runs up to 30 rounds with early stopping: local training, "
+               "then a data-weighted average of the returned weights.",
                "The result is the <strong>Original model</strong> — the artefact "
                "unlearning must edit.",
                "Client 0 requests removal. Three procedures run: Oracle "
                "(retrain), Plain (fine-tune), EPU (fine-tune + explanation anchor).",
-               "Every model is scored on four axes against the oracle, across "
-               "three seeds."])
+               "Every model is scored on four axes, against both the Original "
+               "and the oracle, across three seeds."])
+        if (PAPER / "figures" / "fig_overview.png").exists():
+            st.image(str(PAPER / "figures" / "fig_overview.png"), width="stretch")
+            st.caption("Block diagram of the study. (a) Data, patient-level split, "
+                       "non-IID partition and FedAvg training give the Original "
+                       "model. (b) After the erasure request the Oracle is retrained "
+                       "without the client; in EPU each remaining client compares "
+                       "the rollout map of a trainable copy with that of the frozen "
+                       "Original and adds this explanation loss, weighted by λ, to "
+                       "the task loss (λ = 0 gives Plain). (c) Models and metrics "
+                       "compared. The gradient-ascent baseline is not drawn.")
 
         section("How to read this archive")
         st.markdown(
             "**Learn (01–04)** builds the ideas in order: how the model is trained "
             "without sharing data, what unlearning means and how forgetting is "
-            "verified, the proposed EPU objective, and how a transformer explains "
+            "audited, the proposed EPU objective, and how a transformer explains "
             "itself.  \n**Live** runs the real trained checkpoints on your machine "
             "— diagnosis with attention heatmaps, then a before/after unlearning "
             "comparison.  \n**Evidence** gives the measured multi-seed results with "
@@ -1017,7 +1065,8 @@ if page == "Home":
         takeaway("This project's claim is <i>not</i> \"a better accuracy number.\" "
                  "It is that <b>explanation stability is a first-class, measurable "
                  "objective of unlearning</b> — and we built the pipeline that "
-                 "measures it honestly against a retrain oracle.")
+                 "measures it against both the pre-unlearning model and a "
+                 "retrain oracle.")
         nextbox()
     with side:
         toc(["The pipeline", "How to read this archive"])
@@ -1143,48 +1192,75 @@ elif page == "02 · Unlearning & Forgetting":
                "between Plain and EPU is attributable to that single term and "
                "nothing else."])
 
-        section("Proving the client was forgotten")
+        section("Auditing whether the client was forgotten")
         st.markdown(
             "You cannot open a network and point at a forgotten client's "
             "influence, so we **attack** the model instead. A "
             "**membership-inference attack** (Shokri et al., 2017) exploits the "
             "fact that models behave differently on data they trained on, and "
-            "tries to tell members from non-members. We report the AUC of that "
-            "separation:")
+            "tries to tell the forgotten client's training images from held-out "
+            "test images. We report the AUC of that separation:")
         st.markdown(
-            "- **AUC ≈ 1.0** — the model clearly remembers. Unlearning failed.\n"
-            "- **AUC ≈ 0.5** — coin-flip: the client's data is statistically "
-            "indistinguishable from data never seen. That is what *forgotten* means.\n"
-            "- The **oracle** — which truly never saw the client — anchors the "
-            "target profile of perfect forgetting.")
-        if sum_main:
-            r = {x["config"]: x for x in sum_main["tables"]["comparison"]}
+            "- **AUC well above 0.5** — the model still carries a detectable "
+            "trace of the client.\n"
+            "- **AUC ≈ 0.5** — this attack cannot tell the two groups apart. "
+            "That is *not* proof of forgetting: a weak attack reads 0.5 on "
+            "every model.\n"
+            "- The **oracle**, which never saw the client, is the reference a "
+            "perfectly unlearned model should resemble.")
+        st.markdown(
+            "Three attacks of increasing strength were applied to the saved "
+            "checkpoints: the plain **loss threshold**; the loss **calibrated "
+            "per image by the oracle's loss** on the same image (Watson et al., "
+            "2022); and that calibrated score restricted to the **findings "
+            "present** in the image. The calibrated attacks need the retrained "
+            "oracle, so they are an auditor's tool, not an outside attacker's.")
+        if HAVE_PAPER:
+            _o = audit[("-", "original")]
+            _p = audit[("A", "finetune_retain")]
+            _e = audit[("A", "epu@1")]
             kpi_row([
-                ("Oracle (never saw client)", r["oracle"]["mia_auc"],
-                 "the definition of perfectly forgotten"),
-                ("Plain unlearning", r["finetune_retain"]["mia_auc"],
-                 "statistically identical to the oracle"),
-                ("EPU", r["epu@1"]["mia_auc"],
-                 "adding the explanation term does not hurt forgetting"),
+                ("Loss-threshold attack · Original", f"{_o['loss_auc'][0]:.3f}",
+                 "at chance before anything is removed — this attack is "
+                 "uninformative here"),
+                ("Calibrated audit · Original", f"{_o['positive_auc'][0]:.3f}",
+                 "positive-finding attack: a weak but real trace of client 0"),
+                ("Calibrated audit · after unlearning",
+                 f"{_p['positive_auc'][0]:.3f} / {_e['positive_auc'][0]:.3f}",
+                 "Plain / EPU λ=1, setting A: lower, not at chance, and the "
+                 "same for both"),
             ])
 
         section("The honest nuance")
         st.markdown(
-            "The **Original** model also scores ≈ 0.50 — because a "
-            "well-regularised model trained on 100k+ images barely memorises "
-            "individual samples in the first place. So our strongest, most precise "
-            "claim is not \"MIA dropped\"; it is: **after unlearning, the model is "
-            "indistinguishable from the oracle on the forgotten client — on "
-            "membership signal *and* on prediction distance — i.e. it behaves as if "
-            "the client had never participated.** We also verify the *procedure*: "
-            "the forgotten client's data is physically excluded from every "
-            "unlearning step.")
+            "With the loss-threshold attack used during the runs, **every** model "
+            "scores ≈ 0.50 — the Original included, because a well-regularised "
+            "model trained on 100k+ images barely memorises individual samples. "
+            "An attack that reads 0.5 before unlearning cannot show that "
+            "unlearning worked.\n\n"
+            "The calibrated audit does detect something. What it shows, as "
+            "measured:\n"
+            "- **Fine-tuning reduces the trace but does not remove it.** The "
+            "audit AUC falls in all 24 comparisons with the Original, to "
+            "0.55–0.57 in setting A and 0.53–0.55 in setting B.\n"
+            "- **EPU and Plain do not differ measurably** under fine-tuning: "
+            "anchoring to the Original shows no sign of retaining more of the "
+            "client.\n"
+            "- **Part of the signal is the client's label mix**, not its "
+            "individual records: computed within a single finding, the "
+            "Original's AUC drops to about 0.55.\n"
+            "- **After gradient ascent, EPU keeps slightly more of the trace** "
+            "than plain repair (Results page).\n\n"
+            "So the claim is *partial* forgetting, audited on a subset of the "
+            "data with three seeds and no shadow models. We also verify the "
+            "*procedure*: the forgotten client's data is excluded from every "
+            "step of Plain and EPU.")
         takeaway("Unlearning is a <b>three-way trade-off</b> (forget · keep "
                  "accuracy · stay cheap). This project adds — and measures — a "
                  "fourth axis: <b>keep the explanation</b>.")
         nextbox()
     with side:
-        toc(["Proving the client was forgotten", "The honest nuance"])
+        toc(["Auditing whether the client was forgotten", "The honest nuance"])
 
 
 # ===========================================================================
@@ -1502,8 +1578,8 @@ elif page == "Unlearning":
         lede("Client 0 has asked to be forgotten. Below, the <b>Original</b> model "
              "and an <b>unlearned</b> model score the same X-ray. If unlearning is "
              "trustworthy, the attention stays anchored (explanation preserved) "
-             "while the measured membership signal on the forgotten client sits at "
-             "coin-flip (page 02). Switch methods — including the λ-sweep EPU "
+             "while the membership trace of the forgotten client goes down "
+             "(page 02). Switch methods — including the λ-sweep EPU "
              "variants — and compare.")
 
         methods = {}
@@ -1583,9 +1659,10 @@ elif page == "Unlearning":
                             ("Diagnosis · macro-AUROC", f"{a1} → {b1}",
                              f"Δ {d1:+.3f} — must <b>not</b> change: the model has "
                              "to stay a good classifier"),
-                            ("Forgetting · MIA AUC", f"{a2} → {b2}",
-                             f"Δ {d2:+.3f} — sits at chance (0.50) before and "
-                             "after; matching the oracle is the target"),
+                            ("Loss-threshold MIA AUC", f"{a2} → {b2}",
+                             f"Δ {d2:+.3f} — at chance (0.50) before and after, "
+                             "so this attack says nothing; see the calibrated "
+                             "audit on page 02"),
                             ("Behaviour · distance to oracle", f"{a3} → {b3}",
                              f"Δ {d3:+.3f} — this <b>should</b> move: the model "
                              "shifts toward one that never saw the client"),
@@ -1597,10 +1674,11 @@ elif page == "Unlearning":
                         st.markdown(
                             "Read the four axes together: **three of them should "
                             "barely move and one of them should.** Diagnosis and "
-                            "the membership signal stay put — the model remains "
-                            "just as good a classifier, and it was never "
-                            "distinguishable on the forgotten client to begin with "
-                            "(page 02). What genuinely changes is the model's "
+                            "the loss-threshold membership signal stay put — the "
+                            "model remains just as good a classifier, and that "
+                            "simple attack could not single out the forgotten "
+                            "client even before unlearning (the stronger audit on "
+                            "page 02 can). What genuinely changes is the model's "
                             "*behaviour relative to the oracle*: it moves toward the "
                             "model that never saw client 0. Explanation fidelity, "
                             "the fourth axis, is the one this project adds — and it "
@@ -1618,14 +1696,16 @@ elif page == "Unlearning":
                         "Model": nice.get(r["config"],
                                           r["config"].replace("epu@", "EPU λ=")),
                         "Macro-AUROC": r["macro_auc"],
-                        "MIA AUC (forgetting)": r["mia_auc"],
+                        "MIA AUC (loss threshold)": r["mia_auc"],
                         "Expl. cosine → oracle": r["expl_cos_to_oracle"],
                         "Speedup vs oracle": r["speedup_vs_oracle"],
                     } for r in sel_summary["tables"]["comparison"]]),
                         hide_index=True, width="stretch")
-                    st.caption("How to read: MIA ≈ 0.50 ⇒ forgotten client "
-                               "indistinguishable (forgetting verified) · cosine ≈ "
-                               "0.96 ⇒ visual reasoning preserved · speedup > 1 ⇒ "
+                    st.caption("How to read: the loss-threshold MIA is ≈ 0.50 "
+                               "for every model, the Original included, so it does "
+                               "not verify forgetting (page 02 has the calibrated "
+                               "audit) · cosine to the oracle is ≈ 0.96 for all · "
+                               "speedup > 1 ⇒ "
                                "cheaper than the oracle's retrain. Mean ± std over "
                                "seeds 42/43/44.")
                 section("How to read this comparison")
@@ -1663,10 +1743,10 @@ elif page == "Unlearning":
                     "findings. A large swing would suggest instability, not "
                     "successful forgetting.")
                 takeaway("Unlearning is <b>shown</b> as a three-part exhibit: the "
-                         "procedure excluded the client, the MIA sits at the "
-                         "oracle's coin-flip profile, and the attention you see "
-                         "above barely moved. Forget · keep accuracy · keep "
-                         "reasoning.")
+                         "procedure excluded the client, the calibrated audit "
+                         "finds less of its trace than before, and the attention "
+                         "you see above barely moved. Forget (in part) · keep "
+                         "accuracy · keep reasoning.")
         nextbox()
     with side:
         toc(["Before → after on one image",
@@ -1684,28 +1764,51 @@ elif page == "Results & Verdict":
     with art:
         kicker("Evidence · three seeds · mean ± std")
         display("Results &amp; the honest verdict: did EPU beat Plain?")
-        lede("Two experiment campaigns were run. The <b>main experiment</b> "
-             "(λ = 0.5, 1.0) established the pipeline and produced a null result — "
-             "EPU ≈ Plain. The loss-balance arithmetic on page 03 predicted why, "
-             "and predicted where the effect should appear. The <b>λ-sweep</b> "
-             "(λ = 10, 30, 100) tested that prediction. Below is exactly what was "
-             "measured.")
+        lede("Two fine-tuning settings were run. <b>Setting A</b> (the main "
+             "experiment, λ = 0.5 and 1) is mild and keeps accuracy; <b>setting B</b> "
+             "(the λ-sweep, λ = 1 to 100) fine-tunes harder. Against the retrain "
+             "oracle EPU and Plain are indistinguishable in both. Against the "
+             "pre-unlearning model — the objective EPU optimises — EPU is more "
+             "stable in both. A stronger membership audit and a second unlearning "
+             "baseline, gradient ascent, were added afterwards. Below is exactly "
+             "what was measured.")
 
         if sum_main and sum_sweep:
             m_rows = {r["config"]: r for r in sum_main["tables"]["comparison"]}
             s_rows = {r["config"]: r for r in sum_sweep["tables"]["comparison"]}
 
-            section("Act 1 — Main experiment: the null result")
+            section("Act 1 — Setting A: no gain against the oracle, a gain against the Original")
             kpi_row([
                 ("Plain — explanation cos → oracle",
                  m_rows["finetune_retain"]["expl_cos_to_oracle"],
                  "already very high without any help"),
-                ("Best EPU (λ=0.5)", m_rows["epu@0.5"]["expl_cos_to_oracle"],
-                 "statistically identical — no win"),
-                ("Why", "λ·L_exp ≈ 3.5% of loss",
-                 "the anchor was a whisper (page 03 arithmetic)"),
+                ("Best EPU (λ=0.5) — cos → oracle",
+                 m_rows["epu@0.5"]["expl_cos_to_oracle"],
+                 "statistically identical — no gain on this reference"),
             ])
-            st.markdown(f"> Recorded finding: *{sum_main['findings']['statement']}*")
+            st.markdown("> Finding recorded by the run, against the oracle "
+                        f"reference: *{sum_main['findings']['statement']}*")
+            if HAVE_PAPER:
+                st.markdown(
+                    "The run logged similarity to the oracle only. Similarity to "
+                    "the **Original** was computed afterwards from the saved "
+                    "checkpoints, with the same code and probe images (the "
+                    "computation reproduces the logged oracle similarities):")
+                kpi_row([
+                    ("Plain — IoU → Original",
+                     pm(stab_a["finetune_retain"]["expl_iou_to_original"]),
+                     "the attended regions drift although accuracy does not"),
+                    ("EPU λ=0.5 — IoU → Original",
+                     pm(stab_a["epu@0.5"]["expl_iou_to_original"]),
+                     "higher in every seed"),
+                    ("EPU λ=1 — IoU → Original",
+                     pm(stab_a["epu@1"]["expl_iou_to_original"]),
+                     "higher in every seed, macro-AUROC unchanged"),
+                ])
+                st.markdown(
+                    "So setting A is not a null result on the stated objective: "
+                    "EPU keeps the maps closer to the pre-unlearning model at the "
+                    "operating point that preserves utility.")
 
             section("Act 2 — λ-sweep: the predicted effect appears")
             import pandas as pd
@@ -1723,7 +1826,8 @@ elif page == "Results & Verdict":
                 f"**{s_rows['finetune_retain']['expl_cos_to_oracle']}**\n"
                 f"- Every strong-λ EPU (10, 30, 100) lands **above** Plain, while "
                 f"λ = 1 does not — the **dose-response** the theory predicted.\n"
-                f"- Forgetting is untouched (MIA ≈ 0.50 everywhere) and accuracy is "
+                f"- The loss-threshold MIA is ≈ 0.50 everywhere (as it is for the "
+                f"Original — see the membership audit below) and accuracy is "
                 f"within a fraction of a point of Plain.\n")
             st.markdown(f"> Recorded finding: *{sum_sweep['findings']['statement']}*")
 
@@ -1877,8 +1981,9 @@ elif page == "Results & Verdict":
                 if (PRES_FIGS / "fig_forgetting_accuracy.png").exists():
                     c3.image(str(PRES_FIGS / "fig_forgetting_accuracy.png"),
                              width="stretch")
-                    c3.caption("What the fidelity gain costs — membership "
-                               "inference stays on the chance line and "
+                    c3.caption("What the fidelity gain costs — the "
+                               "loss-threshold attack stays on the chance line "
+                               "(it is there for the Original too) and "
                                "macro-AUROC is flat across the sweep. "
                                "λ-sweep campaign.")
                 if (PRES_FIGS / "fig_cost.png").exists():
@@ -1888,42 +1993,153 @@ elif page == "Results & Verdict":
                                "longer fine-tuning schedule, so they are not "
                                "comparable with the sweep's.")
 
+            section("Membership audit — a stronger test of forgetting")
+            if HAVE_PAPER:
+                import pandas as pd
+                _names = {"original": "Original", "finetune_retain": "Plain",
+                          "ga_only": "Ascent only", "ga": "GA",
+                          "ga_epu@1": "GA + EPU λ=1"}
+                _order = [("-", "original"), ("A", "finetune_retain"),
+                          ("A", "epu@0.5"), ("A", "epu@1"),
+                          ("B", "finetune_retain"), ("B", "epu@1"), ("B", "epu@10"),
+                          ("B", "epu@30"), ("B", "epu@100")]
+                st.dataframe(pd.DataFrame([{
+                    "Setting": "—" if k[0] == "-" else k[0],
+                    "Model": _names.get(k[1], k[1].replace("epu@", "EPU λ=")),
+                    "Loss AUC": pm(audit[k]["loss_auc"]),
+                    "Calibrated AUC": pm(audit[k]["calibrated_auc"]),
+                    "Positive-finding AUC": pm(audit[k]["positive_auc"]),
+                    "Same-finding AUC": pm(audit[k]["within_finding_auc"]),
+                    "TPR at 5% FPR": pm(audit[k]["positive_tpr_at_5fpr"]),
+                } for k in _order if k in audit]), hide_index=True, width="stretch")
+                st.caption("Members: the forgotten client's training images; "
+                           "non-members: test images, from the first of the twelve "
+                           "NIH archives (292–1,000 members and 601–820 non-members "
+                           "per seed, no patient in both groups). The oracle is the "
+                           "reference model of the calibrated attacks. Chance: AUC "
+                           "0.5, TPR 0.05. Mean ± std over three seeds.")
+                st.markdown(
+                    "- The **loss** and plain **calibrated** attacks sit near "
+                    "chance for every model, the Original included.\n"
+                    "- The **positive-finding** attack detects the forgotten "
+                    f"client in the Original (AUC "
+                    f"{audit[('-', 'original')]['positive_auc'][0]:.3f}). After "
+                    "unlearning it is lower in all 24 comparisons, and the "
+                    "decrease excludes zero at the 95% level in 8 of them "
+                    "(patient-level bootstrap).\n"
+                    "- **EPU minus Plain** averages between −0.017 and +0.010, and "
+                    "its interval includes zero in 15 of 18 seed-level "
+                    "comparisons. At 5% false positives the paired difference "
+                    "includes zero in all 18.\n"
+                    "- **Within a single finding** the Original falls to about "
+                    "0.55 and the unlearned models to 0.51–0.53: part of the "
+                    "signal is the client's label mix.")
+            else:
+                st.info("paper/forgetting_attacks.csv not found.")
+
+            section("Second baseline — gradient ascent at the departing client")
+            if HAVE_PAPER:
+                st.markdown(
+                    "To test whether the explanation term helps beyond plain "
+                    "fine-tuning, it was added to a second unlearning method, "
+                    "after Halimi et al. (2022). Client 0 first takes projected "
+                    "**gradient-ascent** steps on its own data (24 steps inside "
+                    "an L2 ball of radius 0.5% of the weight norm around the "
+                    "Original); the remaining clients then repair the model with "
+                    "the fine-tuning of setting A, without the explanation term "
+                    "(**GA**) or with it (**GA + EPU**, λ = 1). Unlike Plain and "
+                    "EPU, this method reads the forgotten client's data.")
+                import pandas as pd
+
+                def _ga_row(label, res, akey):
+                    return {"Model": label,
+                            "Macro-AUROC": pm(res["macro_auc"]),
+                            "Cosine → Original": pm(res["expl_cos_to_original"]),
+                            "IoU → Original": pm(res["expl_iou_to_original"]),
+                            "IoU → oracle": pm(res["expl_iou_to_oracle"]),
+                            "Audit AUC": pm(audit[akey]["positive_auc"])}
+
+                _sa = per_config_stats(str(FULL_EXP))
+                _plain = dict(_sa["finetune_retain"], **stab_a["finetune_retain"])
+                _epu1 = dict(_sa["epu@1"], **stab_a["epu@1"])
+                st.dataframe(pd.DataFrame([
+                    _ga_row("Plain (setting A)", _plain, ("A", "finetune_retain")),
+                    _ga_row("EPU λ=1 (setting A)", _epu1, ("A", "epu@1")),
+                    _ga_row("Ascent only", ga_res["ga_only"], ("GA", "ga_only")),
+                    _ga_row("GA", ga_res["ga"], ("GA", "ga")),
+                    _ga_row("GA + EPU λ=1", ga_res["ga_epu@1"], ("GA", "ga_epu@1")),
+                ]), hide_index=True, width="stretch")
+                st.caption("Mean ± std over seeds 42/43/44. Audit AUC: the "
+                           "positive-finding membership attack of the table above "
+                           "(0.5 = chance). The ascent runs reused the Original and "
+                           "Oracle checkpoints, whose metrics were reproduced "
+                           "exactly, on a different host.")
+                st.markdown(
+                    "- **Ascent alone damages the model**: macro-AUROC falls to "
+                    f"{ga_res['ga_only']['macro_auc'][0]:.3f} and the audit AUC "
+                    "goes *below* chance — the forgotten images become "
+                    "recognisable by their unusually high loss.\n"
+                    "- **Repair restores utility**, and the maps end about as far "
+                    "from the Original's as after Plain fine-tuning.\n"
+                    "- **Adding the explanation term gives the same stability "
+                    "gain** as over Plain: IoU "
+                    f"{ga_res['ga']['expl_iou_to_original'][0]:.3f} → "
+                    f"{ga_res['ga_epu@1']['expl_iou_to_original'][0]:.3f}, in all "
+                    "three seeds, with utility unchanged and no gain in oracle "
+                    "fidelity.\n"
+                    "- **One result is not in EPU's favour.** After ascent, "
+                    "GA + EPU keeps slightly more of the membership trace than GA "
+                    f"({audit[('GA', 'ga_epu@1')]['positive_auc'][0]:.3f} against "
+                    f"{audit[('GA', 'ga')]['positive_auc'][0]:.3f}); the difference "
+                    "is positive in every seed and its interval excludes zero in "
+                    "two of three. An anchor to the original model works against "
+                    "an unlearning step that moves the model away from it.")
+            else:
+                st.info("paper/ga_results.csv not found.")
+
             section("The verdict — stated the way a reviewer would accept it")
             st.markdown(
                 "1. **On the project's stated objective — preserving the Original's "
-                "explanations — EPU wins clearly.** Every λ beats Plain in **every "
-                "seed**, the margin (+0.016 to +0.023 cosine) is **2.4–3.3× Plain's "
-                "own across-seed standard deviation**, and all four metrics agree "
-                "(IoU 0.60 → 0.87, MSE ~14× smaller). The effect is monotonic in λ "
-                "— the dose-response the loss-balance arithmetic on page 03 "
-                "predicted before the sweep was run.\n"
-                "2. **It costs nothing that matters.** Forgetting is unchanged "
-                "(MIA ≈ 0.50 at every λ, identical to Plain and the oracle) and "
-                "macro-AUROC stays within a fraction of a point of Plain. That "
-                "trade-off — not the raw similarity number — is the contribution.\n"
-                "3. **On the oracle reference, EPU ≈ Plain.** The gain there is "
-                "≈ +0.0015, inside seed noise, so we report it as directionally "
-                "positive but **not** statistically significant. Both references "
-                "are shown above; we do not pick the flattering one.")
+                "explanations — EPU is better in every seed and setting.** In "
+                "setting B the margin (+0.016 to +0.023 cosine) is 2.4–3.3× Plain's "
+                "own across-seed standard deviation and all four metrics agree "
+                "(IoU 0.60 → 0.87). In setting A, which keeps accuracy, IoU rises "
+                "from 0.70 to 0.82. Added to gradient ascent, 0.71 → 0.82. The "
+                "effect is monotonic in λ.\n"
+                "2. **It costs no accuracy relative to Plain.** Macro-AUROC is "
+                "within a fraction of a point of Plain everywhere. Setting B "
+                "itself costs about 1.7 points, for Plain and EPU alike.\n"
+                "3. **On the oracle reference, EPU ≈ Plain.** No reliable gain; "
+                "both references are shown, and we do not pick the flattering "
+                "one.\n"
+                "4. **Forgetting is partial, and equal for Plain and EPU under "
+                "fine-tuning.** The calibrated audit finds a weak trace of the "
+                "client that fine-tuning lowers but does not remove.\n"
+                "5. **After gradient ascent EPU retains slightly more of that "
+                "trace.** Stability and forgetting then have to be traded off "
+                "through λ.\n"
+                "6. **Limits.** One dataset, one backbone, five clients, one "
+                "forgotten client, three seeds; with three seeds the paired tests "
+                "are indicative only.")
 
             note_html = (
                 '<div class="take"><b>How to interpret this result.</b><br><br>'
                 '<b>1. The effect is by construction — the experiment establishes '
                 'its price.</b> EPU\'s added loss term is the distance to the '
                 'Original\'s attention maps, so the <i>direction</i> of the gain is '
-                'by design. What was not guaranteed, and is exactly what this study '
-                'measures, is the cost: forgetting is unchanged (MIA identical to '
-                'Plain and to the oracle at every λ) and macro-AUROC stays within a '
-                'fraction of a point. A constraint added to one objective normally '
-                'degrades another — here it does not. The clean dose-response from '
-                'λ = 1 to λ = 100 confirms the mechanism is the loss term itself, '
-                'not a seed artefact.<br><br>'
+                'by design. What was not guaranteed, and is what this study '
+                'measures, is the cost: macro-AUROC stays within a fraction of a '
+                'point of Plain, and under fine-tuning the membership audit shows '
+                'no extra trace of the client. After gradient ascent a small extra '
+                'trace does appear. The clean dose-response from λ = 1 to λ = 100 '
+                'confirms the mechanism is the loss term itself, not a seed '
+                'artefact.<br><br>'
                 '<b>2. The two references diverge — a measured finding.</b> The '
                 'oracle\'s own cosine to the Original is '
                 f'{stats["oracle"]["expl_cos_to_original"][0]:.4f}, <i>lower</i> '
                 f'than Plain\'s {stats["finetune_retain"]["expl_cos_to_original"][0]:.4f}. '
-                'Genuinely forgetting a client therefore moves a model\'s '
-                'explanations <i>away</i> from the Original of its own accord. '
+                'A model retrained without the client attends differently from '
+                'the Original of its own accord. '
                 '"Preserve the validated reasoning" and "behave like a model that '
                 'never saw the client" are distinct objectives, and this work '
                 'quantifies the gap between them instead of assuming they coincide '
@@ -1980,17 +2196,20 @@ elif page == "Results & Verdict":
             "- **Pre-registered bar** — what \"EPU wins\" would mean was fixed "
             "*before* the sweep ran, and the verdict is judged against it.\n"
             "- **Self-describing checkpoints** — every .pt embeds its config and seed.")
-        takeaway("Honesty is the strategy: a modest, predicted, dose-responsive "
-                 "gain plus a rigorous null is <b>more credible</b> to any panel "
-                 "than an inflated claim — and it is exactly what the data shows.")
+        takeaway("Honesty is the strategy: a predicted, dose-responsive gain in "
+                 "stability, a null on oracle fidelity, partial forgetting and one "
+                 "trade-off after gradient ascent are <b>more credible</b> to any "
+                 "panel than an inflated claim — and they are what the data shows.")
         nextbox()
     with side:
-        toc(["Act 1 — Main experiment: the null result",
+        toc(["Act 1 — Setting A: no gain against the oracle, a gain against the Original",
              "Act 2 — λ-sweep: the predicted effect appears",
              "Why the two campaigns report different numbers",
              "Explanation fidelity measured against two references",
+             "Membership audit — a stronger test of forgetting",
+             "Second baseline — gradient ascent at the departing client",
              "The verdict — stated the way a reviewer would accept it",
-             "Figures from the selected experiment",
+             "Figures written by the training run itself",
              "Why the evaluation can be trusted"])
 
 
@@ -2222,7 +2441,8 @@ elif page == "Related Work & Gap":
             "| Explanation measurement | Qualitative visualisation | Quantitative: "
             "cosine, Pearson, IoU, MSE — against two references |\n"
             "| Forgetting verification | Assumed or loss-based | "
-            "Membership-inference AUC against a retrain oracle |\n"
+            "Oracle-calibrated membership audit with patient-level bootstrap "
+            "intervals |\n"
             "| Reference standard | Often absent | Retrain-from-scratch oracle |\n"
             "| Reproducibility | Frequently single-run | 3 seeds, fixed regime, "
             "full artefact logging |")
@@ -2256,7 +2476,8 @@ elif page == "Scope & Design Decisions":
         section("The controlled-comparison design")
         st.markdown(
             "**Decision.** One forgotten client (client 0), one dataset, one "
-            "backbone, one fine-tuning schedule — held fixed across every arm.\n\n"
+            "backbone, and within each of the two settings one fine-tuning "
+            "schedule — held fixed across every arm.\n\n"
             "**Why.** The scientific question is what the explanation term does. "
             "Holding everything else constant means the only variable between "
             "Plain and EPU is a single loss term, so the measured difference is "
@@ -2307,13 +2528,23 @@ elif page == "Scope & Design Decisions":
             "on which EPU shows no advantage, is what makes the result on the "
             "stated objective credible rather than selected.")
 
+        section("A second unlearning baseline")
+        st.markdown(
+            "**Decision.** The explanation term was also added to gradient ascent "
+            "at the departing client, a published client-unlearning method, in "
+            "setting A.\n\n"
+            "**Why.** A gain shown only over plain fine-tuning could be a property "
+            "of that one procedure. The same gain in stability appears after "
+            "gradient ascent — and so does a small cost in the membership audit, "
+            "which is reported with it.")
+
         section("Project maturity")
         kpi_row([
             ("Technology readiness", "TRL 4",
              "validated in a laboratory setting on a public benchmark"),
             ("Sustainable Development Goals", "SDG 3 · 9",
              "good health & well-being; industry, innovation & infrastructure"),
-            ("Intended outcome", "Conference paper",
+            ("Intended outcome", "Journal paper",
              "the contribution is a method plus an evaluation framework"),
         ])
         st.markdown(
@@ -2332,7 +2563,8 @@ elif page == "Scope & Design Decisions":
         toc(["The controlled-comparison design", "Five clients, Dirichlet α = 0.5",
              "Three seeds, reported as mean ± std",
              "Attention rollout as the explanation operator",
-             "Reporting both reference points", "Project maturity"])
+             "Reporting both reference points", "A second unlearning baseline",
+             "Project maturity"])
 
 
 # ===========================================================================

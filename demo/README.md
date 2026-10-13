@@ -6,10 +6,12 @@ story using the **real trained checkpoints** — no live training, nothing faked
 1. **Diagnosis** — the federated (Original) DeiT-Small model predicts 14 chest
    X-ray findings and shows *where it looks* via attention rollout.
 2. **Unlearning (before → after)** — Original vs Plain vs EPU vs Oracle on the
-   same image, plus the measured metrics proving the forgotten client is no
-   longer identifiable (membership-inference ≈ 0.5) while explanations stay
-   stable (attention preserved).
-3. **Results** — the measured comparison table and result figures.
+   same image, with the measured metrics: attention maps stay closer to the
+   Original with EPU, and a calibrated membership audit shows the trace of the
+   forgotten client reduced but not removed.
+3. **Results** — setting A and setting B, the membership audit, the
+   gradient-ascent baseline and the verdict, read from the result files in
+   `ec2_final_run/` and `paper/`.
 
 ## One-time setup
 
@@ -53,14 +55,16 @@ If your folders differ, just edit the three paths at the top of the sidebar.
    compare to the ground-truth label.
 3. **(5 min) Tab 2 — Unlearning.** Choose *Plain* then *EPU*. Show the two
    attention maps side by side (they stay aligned → explanation preserved), then
-   the metrics table: **MIA ≈ 0.50** (the client is forgotten), **explanation
-   cosine ≈ 0.96** (reasoning preserved), **speedup > 1** (cheaper than the
-   Oracle's full retrain).
-4. **(3 min) Tab 3 — Results.** Walk the figures and the one-line finding.
+   the metrics table. Note that the loss-threshold MIA is ≈ 0.50 for every
+   model, the Original included, so it does not by itself show forgetting; the
+   calibrated audit on page 02 does detect a trace, which unlearning lowers.
+4. **(3 min) Tab 3 — Results.** Walk setting A, the λ-sweep, the membership
+   audit, the gradient-ascent baseline and the verdict.
 5. **(1 min) Honesty + scope.** State clearly: this is a research prototype
-   (TRL 4), validated in simulation on the NIH benchmark; the EPU explanation
-   gain over Plain is real but small (within noise), and full clinical
-   deployment is future work.
+   (TRL 4), validated in simulation on the NIH benchmark with three seeds. EPU
+   keeps attention maps closer to the pre-unlearning model in every seed, does
+   not bring them closer to the retrain oracle, and after gradient ascent keeps
+   slightly more of the membership trace. Clinical deployment is future work.
 
 ## Notes
 
