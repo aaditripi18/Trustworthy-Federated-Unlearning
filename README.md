@@ -62,7 +62,7 @@ preserve, rather than a side effect to ignore.
 ## Method
 
 <p align="center">
-  <img src="report/architecture.png" alt="System architecture" width="720"/>
+  <img src="paper/figures/fig_overview.png" alt="Block diagram: original model, unlearning with EPU, evaluation" width="860"/>
 </p>
 
 1. **Federated training** — FedAvg across non-IID, patient-disjoint clients
@@ -145,10 +145,6 @@ Result files:
 [membership audit](paper/forgetting_attacks.csv) ·
 [gradient-ascent baseline](paper/ga_results.csv).
 `python paper/verify_numbers.py` checks the quoted numbers against these files.
-
-<p align="center">
-  <img src="paper/figures/fig_dose_response.png" width="520"/>
-</p>
 
 ## Repository structure
 
