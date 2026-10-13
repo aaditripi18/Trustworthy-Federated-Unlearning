@@ -138,6 +138,38 @@ for c, pq in (("epu@0.5", 0.012), ("epu@1", 0.003)):
     check(f"A paired IoU p, {c}", stats.ttest_rel(
         SA_[SA_.config == c].sort_values("seed").expl_iou_to_original,
         SA_[SA_.config == "finetune_retain"].sort_values("seed").expl_iou_to_original).pvalue, pq, 3)
+# --- stronger membership attacks (compute_forgetting_attacks.py)
+K = pd.read_csv(Path(__file__).resolve().parent / "forgetting_attacks.csv")
+ko = K[K.config == "original"].sort_values("seed")
+ku = K[~K.config.isin(["original", "oracle"])]
+ke = ku[ku.config.str.startswith("epu")]
+check("attack: Original positive AUC", ko.positive_auc.mean(), 0.605, 3)
+check("attack: Original positive AUC s.d.", ko.positive_auc.std(ddof=1), 0.042, 3)
+for v, qd in zip(ko.positive_auc, (0.644, 0.561, 0.608)):
+    check("attack: Original positive AUC per seed", v, qd, 3)
+for v, qd in zip(list(ko.positive_auc_lo) + list(ko.positive_auc_hi), (0.60, 0.49, 0.56, 0.69, 0.63, 0.66)):
+    check("attack: Original interval bound", v, qd, 2)
+check("attack: Original calibrated AUC", ko.calibrated_auc.mean(), 0.514, 3)
+check("attack: Original TPR at 5% FPR", ko.positive_tpr_at_5fpr.mean(), 0.136, 3)
+check("attack: Original same-finding AUC", ko.within_finding_auc.mean(), 0.550, 3)
+within("attack: loss AUC on the subset", K.groupby(["setting", "config"]).loss_auc.mean(), 0.49, 0.51)
+within("attack: members per seed", ko.n_members, 292, 1000)
+within("attack: non-members per seed", ko.n_nonmembers, 601, 820)
+within("attack: findings used", ko.n_findings_used, 5, 8)
+check("attack: comparisons", len(ku), 24, 0)
+check("attack: all below Original", int((ku.pos_minus_original < 0).sum()), 24, 0)
+check("attack: decrease excludes zero", int((ku.pos_minus_original_hi < 0).sum()), 8, 0)
+ga = ku.groupby(["setting", "config"]).positive_auc.mean()
+within("attack: setting A positive AUC", ga["A"], 0.545, 0.575)
+within("attack: setting B positive AUC", ga["B"], 0.525, 0.555)
+within("attack: unlearned same-finding AUC", ku.groupby(["setting", "config"]).within_finding_auc.mean(), 0.505, 0.535)
+gd = ke.groupby(["setting", "config"]).pos_minus_plain.mean()
+check("attack: EPU-Plain smallest mean", gd.min(), -0.017, 3)
+check("attack: EPU-Plain largest mean", gd.max(), 0.010, 3)
+check("attack: EPU-Plain interval includes zero", int(((ke.pos_minus_plain_lo <= 0) & (ke.pos_minus_plain_hi >= 0)).sum()), 15, 0)
+check("attack: EPU lower", int((ke.pos_minus_plain_hi < 0).sum()), 2, 0)
+check("attack: EPU higher", int((ke.pos_minus_plain_lo > 0).sum()), 1, 0)
+check("attack: the one higher case", ke[ke.pos_minus_plain_lo > 0].pos_minus_plain.max(), 0.009, 3)
 # --- oracle fidelity
 cfgs = [(A, c) for c in ("original", "finetune_retain", "epu@0.5", "epu@1")] + \
        [(B, c) for c in ["finetune_retain"] + [f"epu@{l}" for l in LAM]]
