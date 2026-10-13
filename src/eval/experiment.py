@@ -39,7 +39,8 @@ def config_label(method: str, lam) -> str:
 # ---------------------------------------------------------------- torch part
 
 def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
-               ckpt_dir=None, reuse_ckpt_dir=None, extra=None, standard=True) -> list[dict]:
+               ckpt_dir=None, reuse_ckpt_dir=None, extra=None, standard=True,
+               only=None) -> list[dict]:
     """Run the full chain for one seed and return one result dict per model.
 
     ckpt_dir : optional directory for per-seed model checkpoints. When set, each
@@ -55,6 +56,10 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
     standard : when False, Plain and EPU are not re-run (their results already
                exist); only Original, Oracle and the ``extra`` runs are evaluated.
                Default True leaves the original behaviour unchanged.
+    only     : "original" or "oracle" trains and saves just that model and returns its
+               timing row (seed, config, wall_time_s, rounds) without evaluation, so
+               the two from-scratch trainings can run as separate jobs. A later call
+               with ``reuse_ckpt_dir`` then loads both. Default None: unchanged.
     """
     import torch  # noqa: F401
 
@@ -197,7 +202,7 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
     if _r is not None:
         base = {"model": _r[0]}; base_t, base_rounds = _r[1], _r[2]
         orig_params = get_params(base["model"])
-    else:
+    elif only != "oracle":
         base_cb, base_st = make_cb("original", fed_rounds, track_best=True)
         t0 = time.perf_counter()
         base = run_federated(cfg, logger=logger, dm=dm, pos_weight=pos_weight,
@@ -209,6 +214,9 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
         base_rounds = base_st["rounds_run"]
         _save_ckpt(base["model"], "original.pt")                # == the evaluated Original
     _tick("original")
+    if only == "original":
+        return [{"seed": seed, "config": "original", "wall_time_s": float(base_t),
+                 "rounds": int(base_rounds)}]
 
     # --- Oracle: IDENTICAL regime, only the forget client is excluded (or reuse saved) ---
     _ro = _load_saved("oracle.pt", "oracle")
@@ -223,6 +231,9 @@ def run_single(base_cfg: dict, seed: int, lambdas: list[float], logger=None,
         oracle_rounds = oracle_st["rounds_run"]
         _save_ckpt(oracle["model"], "oracle.pt")            # == the evaluated Oracle
     _tick("oracle")
+    if only == "oracle":
+        return [{"seed": seed, "config": "oracle", "wall_time_s": float(oracle["wall_time_s"]),
+                 "rounds": int(oracle_rounds)}]
 
     plain, plain_st, epus, epu_sts = None, None, {}, {}
     if standard:

@@ -97,3 +97,21 @@ def test_run_single_accepts_extra_baselines():
     res = run_single(cfg, 42, [], extra=extra, standard=False)
     assert [r["config"] for r in res] == ["original", "oracle", "ga_only", "ga_epu@1"]
     assert all("expl_cos_to_original" in r and "mia_auc" in r for r in res)
+
+
+def test_run_single_can_train_original_and_oracle_separately(tmp_path):
+    pytest.importorskip("torch")
+    pytest.importorskip("timm")
+    from src.eval.experiment import run_single
+
+    cfg = _cfg()
+    cfg.update(load_config(REPO_ROOT / "configs" / "explain.yaml"))
+    cfg["explain"]["num_probe_images"] = 4
+    cfg["federated"]["early_stop_patience"] = 99
+    d = tmp_path / "seed_42"
+    a = run_single(cfg, 42, [], ckpt_dir=d, only="original")
+    b = run_single(cfg, 42, [], ckpt_dir=d, only="oracle")
+    assert [r["config"] for r in a + b] == ["original", "oracle"]
+    assert (d / "original.pt").exists() and (d / "oracle.pt").exists()
+    res = run_single(cfg, 42, [1.0], reuse_ckpt_dir=d)
+    assert {r["config"] for r in res} == {"original", "oracle", "finetune_retain", "epu@1"}

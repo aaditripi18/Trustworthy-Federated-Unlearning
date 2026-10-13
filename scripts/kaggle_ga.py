@@ -44,7 +44,9 @@ def find_one(pattern: str) -> Path:
     return Path(hits[0])
 
 
-def main() -> int:
+def setup(seeds, reuse_name="full_experiment", need_checkpoints=True) -> Path:
+    """Steps 1-4: writable copy of the code, linked images, checkpoints placed by their
+    recorded seed under experiments/<reuse_name>, and the partition check. Returns the repo."""
     # ---- 1. code: copy the bundled repository to a writable place
     src_repo = find_one("scripts/run_ga.py").parents[1]
     repo = WORK / "repo"
@@ -78,10 +80,9 @@ def main() -> int:
     # Folder names are not trusted: each checkpoint records the seed it was trained with,
     # and that recorded seed decides where it goes.
     import torch
-    reuse = repo / "experiments" / "full_experiment"
-    seeds = [int(s) for s in os.environ.get("GA_SEEDS", "42,43,44").split(",")]
+    reuse = repo / "experiments" / reuse_name
     found = {}
-    for name in ("original.pt", "oracle.pt"):
+    for name in ("original.pt", "oracle.pt") if need_checkpoints else ():
         for path in sorted(glob.glob(str(INPUT / "**" / name), recursive=True)):
             ck = torch.load(path, map_location="cpu", weights_only=False)
             found[(int(ck["seed"]), name)] = path
@@ -89,13 +90,14 @@ def main() -> int:
     for seed in seeds:
         d = reuse / f"seed_{seed}"
         d.mkdir(parents=True, exist_ok=True)
-        for name in ("original.pt", "oracle.pt"):
+        for name in ("original.pt", "oracle.pt") if need_checkpoints else ():
             if (seed, name) not in found:
                 sys.exit(f"checkpoint {name} for seed {seed} not found under /kaggle/input")
             if not DRY and not (d / name).exists():
                 os.symlink(found[(seed, name)], d / name)
     print("checkpoints:", {k: v for k, v in sorted(found.items())}, flush=True)
-    shutil.copy(find_one("full_experiment_final_results.csv"), reuse / "final_results.csv")
+    if reuse_name == "full_experiment":
+        shutil.copy(find_one("full_experiment_final_results.csv"), reuse / "final_results.csv")
 
     # ---- 4. safety check: the client partition must be the one the checkpoints were trained on
     sys.path.insert(0, str(repo))
@@ -107,19 +109,26 @@ def main() -> int:
         m = split_by_patient(base.copy(), 0.15, 0.15, seed)
         part = partition_by_patient(m[m.split == "train"], 5, 0.5, seed, scheme="dirichlet")
         got = [math.ceil(len(part["client_to_images"][c]) / 32) for c in range(5)]
-        if got != EXPECTED_BATCHES[seed]:
+        print(f"seed {seed}: client sizes (batches of 32) {got}", flush=True)
+        if seed in EXPECTED_BATCHES and got != EXPECTED_BATCHES[seed]:
             sys.exit(f"seed {seed}: client sizes {got} differ from the original run "
                      f"{EXPECTED_BATCHES[seed]}; refusing to continue.")
     print("partition check passed for seeds", seeds, flush=True)
+    if not DRY:
+        try:
+            import timm  # noqa: F401
+        except ImportError:                                # needs the notebook's internet switch
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "timm"])
+    return repo
 
+
+def main() -> int:
+    seeds = [int(s) for s in os.environ.get("GA_SEEDS", "42,43,44").split(",")]
+    repo = setup(seeds)
     if DRY:
         print("dry run finished: bundle is complete and the partition matches")
         return 0
     # ---- 5. run
-    try:
-        import timm  # noqa: F401
-    except ImportError:                                    # needs the notebook's internet switch
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "timm"])
     out = WORK / "ga_baseline"
     env = dict(os.environ, GA_SEEDS=",".join(map(str, seeds)))
     cfg = repo / "configs" / "ga.yaml"
