@@ -64,7 +64,13 @@ MODELS = [  # (setting, config, checkpoint relative to EXP/<run>/seed_<s>/)
     ("B", "epu@10", "exp_a1", "epu_lambda10.pt"),
     ("B", "epu@30", "exp_a1", "epu_lambda30.pt"),
     ("B", "epu@100", "exp_a1", "epu_lambda100.pt"),
+    # gradient-ascent baseline (scripts/run_ga.py, setting-A repair)
+    ("GA", "ga_only", "ga_kaggle/ga_baseline/setting_A", "ga_only.pt"),
+    ("GA", "ga", "ga_kaggle/ga_baseline/setting_A", "ga.pt"),
+    ("GA", "ga_epu@1", "ga_kaggle/ga_baseline/setting_A", "ga_epu@1.pt"),
 ]
+# the model each EPU variant is paired with (same setting, explanation term removed)
+PAIR_BASE = {"epu": "finetune_retain", "ga_epu": "ga"}
 
 
 def predict(ckpt, x):
@@ -159,7 +165,7 @@ def main():
         x = None
         losses = {}
         for setting, cfgname, run, fname in MODELS:
-            cf = CACHE / f"seed{seed}_{run}_{fname}.npy"
+            cf = CACHE / f"seed{seed}_{run.replace('/', '_')}_{fname}.npy"
             if cf.exists():
                 p = np.load(cf)
             else:
@@ -228,9 +234,11 @@ def main():
                 continue
             if row["config"] != "original":
                 row["pos_minus_original"], row["pos_minus_original_lo"],                     row["pos_minus_original_hi"] = paired(key, ("-", "original"))
-            if row["config"].startswith("epu"):
-                row["pos_minus_plain"], row["pos_minus_plain_lo"], row["pos_minus_plain_hi"] =                     paired(key, (row["setting"], "finetune_retain"))
-                row["tpr_minus_plain"], row["tpr_minus_plain_lo"], row["tpr_minus_plain_hi"] =                     paired_tpr(key, (row["setting"], "finetune_retain"))
+            pair_base = PAIR_BASE.get(row["config"].split("@")[0])
+            if pair_base is not None:
+                other = (row["setting"], pair_base)
+                row["pos_minus_plain"], row["pos_minus_plain_lo"], row["pos_minus_plain_hi"] =                     paired(key, other)
+                row["tpr_minus_plain"], row["tpr_minus_plain_lo"], row["tpr_minus_plain_hi"] =                     paired_tpr(key, other)
             print(f"  {row['setting']} {row['config']:16s} loss {row['loss_auc']:.3f} | calibrated "
                   f"{row['calibrated_auc']:.3f} | positive {row['positive_auc']:.3f} "
                   f"[{row['positive_auc_lo']:.3f}, {row['positive_auc_hi']:.3f}] | within "

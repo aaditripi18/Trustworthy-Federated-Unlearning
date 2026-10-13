@@ -140,6 +140,8 @@ for c, pq in (("epu@0.5", 0.012), ("epu@1", 0.003)):
         SA_[SA_.config == "finetune_retain"].sort_values("seed").expl_iou_to_original).pvalue, pq, 3)
 # --- stronger membership attacks (compute_forgetting_attacks.py)
 K = pd.read_csv(Path(__file__).resolve().parent / "forgetting_attacks.csv")
+KGA = K[K.setting == "GA"]            # gradient-ascent baseline rows, checked separately
+K = K[K.setting != "GA"]
 ko = K[K.config == "original"].sort_values("seed")
 ku = K[~K.config.isin(["original", "oracle"])]
 ke = ku[ku.config.str.startswith("epu")]
@@ -170,6 +172,39 @@ check("attack: EPU-Plain interval includes zero", int(((ke.pos_minus_plain_lo <=
 check("attack: EPU lower", int((ke.pos_minus_plain_hi < 0).sum()), 2, 0)
 check("attack: EPU higher", int((ke.pos_minus_plain_lo > 0).sum()), 1, 0)
 check("attack: the one higher case", ke[ke.pos_minus_plain_lo > 0].pos_minus_plain.max(), 0.009, 3)
+# --- gradient-ascent baseline (scripts/run_ga.py; audit rows in KGA)
+G = pd.read_csv(Path(__file__).resolve().parent / "ga_results.csv")
+for c in ("original", "oracle"):                       # reused checkpoints reproduce the main run
+    da = G[G.config == c].set_index("seed"); db = A[A.config == c].set_index("seed")
+    within(f"GA run reproduces {c}", (da.macro_auc - db.macro_auc).abs().tolist()
+           + (da.mia_auc - db.mia_auc).abs().tolist(), 0, 1e-6)
+check("GA only macro-AUROC", m(G, "ga_only", "macro_auc"), 0.766, 3)
+check("GA only drop (points)", 100 * (m(G, "original", "macro_auc") - m(G, "ga_only", "macro_auc")), 3.9, 1)
+check("GA only IoU to Original", m(G, "ga_only", "expl_iou_to_original"), 0.559, 3)
+check("GA macro-AUROC", m(G, "ga", "macro_auc"), 0.806, 3)
+check("GA IoU to Original", m(G, "ga", "expl_iou_to_original"), 0.709, 3)
+check("GA cos to Original", m(G, "ga", "expl_cos_to_original"), 0.989, 3)
+check("GA+EPU macro-AUROC", m(G, "ga_epu@1", "macro_auc"), 0.807, 3)
+check("GA+EPU IoU to Original", m(G, "ga_epu@1", "expl_iou_to_original"), 0.817, 3)
+check("GA+EPU cos to Original", m(G, "ga_epu@1", "expl_cos_to_original"), 0.997, 3)
+dg = diff(G, "ga_epu@1", "expl_iou_to_original", base="ga")
+check("GA paired IoU gain", dg.mean(), 0.109, 3)
+check("GA paired IoU gain s.d.", dg.std(ddof=1), 0.037, 3)
+within("GA paired IoU gain positive", dg, 1e-9, 1)
+check("GA paired IoU p", stats.ttest_rel(G[G.config == "ga_epu@1"].sort_values("seed").expl_iou_to_original,
+                                         G[G.config == "ga"].sort_values("seed").expl_iou_to_original).pvalue, 0.037, 3)
+do = diff(G, "ga_epu@1", "expl_iou_to_oracle", base="ga")
+check("GA paired IoU-to-Oracle", do.mean(), 0.006, 3)
+check("GA paired IoU-to-Oracle s.d.", do.std(ddof=1), 0.009, 3)
+check("GA paired IoU-to-Oracle p", stats.ttest_rel(G[G.config == "ga_epu@1"].sort_values("seed").expl_iou_to_oracle,
+                                                   G[G.config == "ga"].sort_values("seed").expl_iou_to_oracle).pvalue, 0.37, 2)
+ka = KGA.groupby("config").positive_auc.mean()
+check("audit: ascent only", ka["ga_only"], 0.439, 3)
+check("audit: GA", ka["ga"], 0.547, 3)
+check("audit: GA+EPU", ka["ga_epu@1"], 0.572, 3)
+ke2 = KGA[KGA.config == "ga_epu@1"]
+within("audit: GA+EPU minus GA per seed", ke2.pos_minus_plain, 0.0205, 0.0305)
+check("audit: GA+EPU interval excludes zero", int((ke2.pos_minus_plain_lo > 0).sum()), 2, 0)
 # --- oracle fidelity
 cfgs = [(A, c) for c in ("original", "finetune_retain", "epu@0.5", "epu@1")] + \
        [(B, c) for c in ["finetune_retain"] + [f"epu@{l}" for l in LAM]]

@@ -75,15 +75,26 @@ def main() -> int:
     print("images linked:", len(os.listdir(nih / "images")), flush=True)
 
     # ---- 3. checkpoints of the main run (Original and Oracle are reused, not retrained)
+    # Folder names are not trusted: each checkpoint records the seed it was trained with,
+    # and that recorded seed decides where it goes.
+    import torch
     reuse = repo / "experiments" / "full_experiment"
     seeds = [int(s) for s in os.environ.get("GA_SEEDS", "42,43,44").split(",")]
+    found = {}
+    for name in ("original.pt", "oracle.pt"):
+        for path in sorted(glob.glob(str(INPUT / "**" / name), recursive=True)):
+            ck = torch.load(path, map_location="cpu", weights_only=False)
+            found[(int(ck["seed"]), name)] = path
+            del ck
     for seed in seeds:
         d = reuse / f"seed_{seed}"
         d.mkdir(parents=True, exist_ok=True)
         for name in ("original.pt", "oracle.pt"):
-            src = find_one(f"seed_{seed}/{name}")           # fails early if a checkpoint is missing
+            if (seed, name) not in found:
+                sys.exit(f"checkpoint {name} for seed {seed} not found under /kaggle/input")
             if not DRY and not (d / name).exists():
-                os.symlink(src, d / name)
+                os.symlink(found[(seed, name)], d / name)
+    print("checkpoints:", {k: v for k, v in sorted(found.items())}, flush=True)
     shutil.copy(find_one("full_experiment_final_results.csv"), reuse / "final_results.csv")
 
     # ---- 4. safety check: the client partition must be the one the checkpoints were trained on
@@ -105,6 +116,10 @@ def main() -> int:
         print("dry run finished: bundle is complete and the partition matches")
         return 0
     # ---- 5. run
+    try:
+        import timm  # noqa: F401
+    except ImportError:                                    # needs the notebook's internet switch
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "timm"])
     out = WORK / "ga_baseline"
     env = dict(os.environ, GA_SEEDS=",".join(map(str, seeds)))
     cfg = repo / "configs" / "ga.yaml"
