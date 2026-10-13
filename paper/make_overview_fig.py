@@ -29,14 +29,14 @@ plt.rcParams.update({
     "savefig.dpi": 600,
 })
 
-INK, ARROW = "#1f1f1f", "#333333"
-RED = ("#f6ddd8", "#b4574d")        # input data
-GREEN = ("#dcecdd", "#5d9163")      # central pipeline
-BLUE = ("#dae5f3", "#557bb0")       # helper blocks
-ORANGE = ("#f7e6cf", "#b8843c")     # models compared
-PURPLE = ("#e3dff5", "#7768b6")     # evaluation
-GREY = ("#ececec", "#8a8a8a")       # run conditions
-CONT = ("#f7f7f7", "#9a9a9a")       # container
+INK, ARROW = "#000000", "#000000"
+# Black and white: every block is white with a black outline. The only shading is
+# light grey for the frozen (no-gradient) model and the run-condition bars.
+WHITE = ("#ffffff", "#000000")
+RED = GREEN = BLUE = ORANGE = PURPLE = WHITE
+FROZEN = ("#e2e2e2", "#000000")     # frozen reference model
+GREY = ("#ececec", "#000000")       # run conditions
+CONT = ("#ffffff", "#000000")       # container
 
 W = 716.0
 Y0, Y1 = -20.0, 440.0                # drawing units; 100 units = 1 inch
@@ -111,7 +111,7 @@ def main():
     block(ax, cx0, 272, cw, 32, r"Original model  $\theta_o$",
           ["best validation round (early stopping)"], GREEN)
     block(ax, rx0, 272, rw, 32, r"Frozen reference  $\theta_o$",
-          [r"rollout map $\mathbf{M}_{\theta_o}(x)$, no gradient"], BLUE)
+          [r"rollout map $\mathbf{M}_{\theta_o}(x)$, no gradient"], FROZEN)
     px = ix[2] + iw / 2
     route(ax, [(px, iy), (px, 388), (cc, 388), (cc, 354)])
     head(ax, (rx0, 338), (cx0 + cw, 338))

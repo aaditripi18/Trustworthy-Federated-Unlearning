@@ -134,7 +134,7 @@ def fig_dose_response():
     h, l = axes[0].get_legend_handles_labels()
     fig.legend(h, l, frameon=False, loc="upper center", ncol=3, handlelength=1.8,
                bbox_to_anchor=(0.56, 1.01))
-    fig.subplots_adjust(left=0.14, right=0.995, top=0.88, bottom=0.235, wspace=0.42)
+    fig.subplots_adjust(left=0.14, right=0.975, top=0.88, bottom=0.235, wspace=0.42)
     save(fig, "fig_dose_response")
 
 

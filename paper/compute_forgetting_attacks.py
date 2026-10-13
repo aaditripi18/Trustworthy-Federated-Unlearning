@@ -216,6 +216,12 @@ def main():
             pt = fast_auc(member[haspos], pos_score[a][haspos]) -                 fast_auc(member[haspos], pos_score[b][haspos])
             lo, hi = np.percentile(da, [2.5, 97.5])
             return pt, lo, hi
+        def paired_tpr(a, b):
+            """Difference in TPR at 5 % FPR of the positive-finding attack, same resamples."""
+            f = lambda k, m: tpr_at_fpr(member[k], pos_score[m][k])
+            da = [f(k, a) - f(k, b) for k in (bb[haspos[bb]] for bb in boots)]
+            lo, hi = np.percentile(da, [2.5, 97.5])
+            return f(haspos, a) - f(haspos, b), lo, hi
         for row in rows[-len(losses):]:
             key = (row["setting"], row["config"])
             if key not in pos_score:
@@ -224,6 +230,7 @@ def main():
                 row["pos_minus_original"], row["pos_minus_original_lo"],                     row["pos_minus_original_hi"] = paired(key, ("-", "original"))
             if row["config"].startswith("epu"):
                 row["pos_minus_plain"], row["pos_minus_plain_lo"], row["pos_minus_plain_hi"] =                     paired(key, (row["setting"], "finetune_retain"))
+                row["tpr_minus_plain"], row["tpr_minus_plain_lo"], row["tpr_minus_plain_hi"] =                     paired_tpr(key, (row["setting"], "finetune_retain"))
             print(f"  {row['setting']} {row['config']:16s} loss {row['loss_auc']:.3f} | calibrated "
                   f"{row['calibrated_auc']:.3f} | positive {row['positive_auc']:.3f} "
                   f"[{row['positive_auc_lo']:.3f}, {row['positive_auc_hi']:.3f}] | within "
